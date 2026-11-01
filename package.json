@@ -1,0 +1,26 @@
+{
+  "name": "opendoist-schedule",
+  "version": "0.1.0",
+  "description": "Self-hosted task manager with Russian and English natural-language scheduling",
+  "type": "module",
+  "exports": "./src/index.js",
+  "scripts": {
+    "test": "node --test",
+    "demo": "node examples/demo.js",
+    "start": "node --env-file-if-exists=.env server/start.js",
+    "dev": "node --env-file-if-exists=.env --watch server/start.js"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "license": "GPL-3.0-only",
+  "dependencies": {
+    "chrono-node": "^2.9.0",
+    "luxon": "^3.7.2",
+    "rrule": "^2.8.1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/lensws/opendoist.git"
+  }
+}

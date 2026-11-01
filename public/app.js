@@ -1,0 +1,155 @@
+const $ = selector => document.querySelector(selector);
+let tasks = [], history = [], view = 'all', preview = null, editTask = null, previewSequence = 0, timer, toastTimer;
+let settings;
+try { settings = JSON.parse(localStorage.getItem('opendoist.settings')) || {}; } catch { settings = {}; }
+settings = { timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Moscow', language: 'auto', ...settings };
+try { new Intl.DateTimeFormat('ru', { timeZone: settings.timezone }); } catch { settings.timezone = 'Europe/Moscow'; }
+const titles = { all: ['Все задачи', 'Запишите, чтобы больше не держать в голове.'], today: ['Сегодня', 'Выберите главное. Остальное подождёт.'], upcoming: ['Предстоящие', 'Ваши планы, день за днём.'], completed: ['Выполненные', 'Маленькие шаги складываются в большой путь.'], history: ['История', 'Последние 100 выполнений, включая повторяющиеся задачи.'] };
+async function api(path, { method = 'GET', body } = {}) {
+  const response = await fetch(`/api${path}`, { method, headers: body ? { 'Content-Type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined });
+  const data = await response.json();
+  if (!response.ok) { if (response.status === 401 && path !== '/login') showLogin(); const error = new Error(data.error || 'Не удалось выполнить запрос'); error.status = response.status; throw error; }
+  return data;
+}
+function node(tag, className, text) { const el = document.createElement(tag); if (className) el.className = className; if (text !== undefined) el.textContent = text; return el; }
+function today(zone = settings.timezone) { return new Intl.DateTimeFormat('en-CA', { timeZone: zone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date()); }
+function dateLabel(due) {
+  if (!due) return 'Без срока';
+  const current = today(due.timezone);
+  const day = new Date(`${due.date}T12:00:00Z`);
+  const tomorrow = new Date(`${current}T12:00:00Z`); tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+  const label = due.date === current ? 'Сегодня' : due.date === tomorrow.toISOString().slice(0, 10) ? 'Завтра' : day.toLocaleDateString('ru', { day: 'numeric', month: 'short', ...(due.date.slice(0, 4) !== current.slice(0, 4) ? { year: 'numeric' } : {}), timeZone: 'UTC' });
+  return `${label}${due.time ? ` · ${due.time}` : ''}${due.timezone !== settings.timezone ? ` · ${due.timezone}` : ''}`;
+}
+function recurringLabel(task) {
+  if (!task.recurrence) return '';
+  const spans = task.spans?.filter(s => s.kind === 'recurrence' || s.kind === 'mode');
+  return spans?.length ? spans.map(s => s.text).join(' ') : 'Повторяется';
+}
+function showLogin() { $('#workspace').hidden = true; $('#login-screen').hidden = false; tasks = []; history = []; $('#task-list').replaceChildren(); for (const dialog of document.querySelectorAll('dialog[open]')) dialog.close(); }
+async function load() {
+  const result = await api('/tasks'); tasks = result.tasks;
+  if (view === 'history') history = (await api('/history')).history;
+  render();
+}
+function overdue(task) { return task.due && !task.completedAt && (task.due.allDay ? task.due.date < today(task.due.timezone) : Date.parse(task.due.instant) < Date.now()); }
+function meta(task) {
+  const el = node('div', 'task-meta');
+  if (task.due) el.append(node('span', `date-pill${overdue(task) ? ' overdue' : ''}`, `${overdue(task) ? '◷ ' : '▦ '}${dateLabel(task.due)}`));
+  if (task.recurrence) el.append(node('span', 'recurrence-pill', `↻ ${recurringLabel(task)}`));
+  if (task.deadline) el.append(node('span', 'deadline-pill', `Дедлайн: ${dateLabel(task.deadline)}`));
+  return el;
+}
+function actionButton(label, symbol, handler, className = '') { const button = node('button', `icon-button ${className}`, symbol); button.type = 'button'; button.title = label; button.setAttribute('aria-label', label); button.addEventListener('click', handler); return button; }
+function render() {
+  $('#page-error').textContent = '';
+  $('#view-title').textContent = titles[view][0]; $('#view-description').textContent = titles[view][1];
+  $('#today-label').textContent = new Date().toLocaleDateString('ru', { weekday: 'long', day: 'numeric', month: 'long', timeZone: settings.timezone });
+  document.querySelectorAll('[data-view]').forEach(el => { const active = el.dataset.view === view; el.classList.toggle('active', active); if (active) el.setAttribute('aria-current', 'page'); else el.removeAttribute('aria-current'); });
+  const active = tasks.filter(t => !t.completedAt);
+  const filters = { all: active, today: active.filter(t => t.due && t.due.date <= today(t.due.timezone)), upcoming: active.filter(t => t.due && t.due.date > today(t.due.timezone)), completed: tasks.filter(t => t.completedAt) };
+  for (const key of Object.keys(filters)) $(`#count-${key}`).textContent = filters[key].length;
+  const query = $('#search').value.trim().toLocaleLowerCase();
+  const list = $('#task-list'); list.replaceChildren();
+  $('#empty h2').textContent = query ? 'Ничего не найдено' : view === 'today' ? 'На сегодня всё' : view === 'completed' ? 'Первые победы впереди' : view === 'history' ? 'История пока пуста' : 'Здесь пока спокойно';
+  $('#empty p').textContent = query ? 'Попробуйте другое название.' : view === 'today' ? 'Можно выдохнуть — или выбрать следующий шаг.' : ['completed', 'history'].includes(view) ? 'Завершённые задачи появятся здесь.' : 'Добавьте задачу. Даже большой план начинается с маленького шага.';
+  $('#add-form').hidden = ['completed', 'history'].includes(view); $('#examples').hidden = $('#add-form').hidden;
+  if (view === 'history') {
+    const rows = history.filter(h => h.task.title.toLocaleLowerCase().includes(query));
+    for (const item of rows) { const row = node('article', 'task done'); row.append(node('span', 'task-check', '✓')); const content = node('div', 'task-main'); content.append(node('div', 'task-title', item.task.title), meta(item.task), node('div', 'task-meta', `Выполнено ${new Date(item.completedAt).toLocaleString('ru', { timeZone: settings.timezone })}`)); row.append(content); list.append(row); }
+    $('#task-summary').textContent = `Выполнений: ${rows.length}`; $('#empty').hidden = !!rows.length; return;
+  }
+  const selected = filters[view].filter(t => t.title.toLocaleLowerCase().includes(query)).sort((a, b) => (a.due?.date || '9999').localeCompare(b.due?.date || '9999') || (a.due?.time || '').localeCompare(b.due?.time || '') || b.createdAt.localeCompare(a.createdAt));
+  $('#task-summary').textContent = `Задач: ${selected.length}`; $('#empty').hidden = !!selected.length;
+  let lastGroup;
+  for (const task of selected) {
+    const group = task.completedAt ? 'Готово' : overdue(task) ? 'Просрочено' : task.due ? dateLabel({ ...task.due, time: null }) : 'Без срока';
+    if (group !== lastGroup) { list.append(node('h2', 'group-heading', group)); lastGroup = group; }
+    const row = node('article', `task${task.completedAt ? ' done' : ''}`);
+    const check = node('button', 'task-check', task.completedAt ? '✓' : ''); check.type = 'button'; check.title = task.completedAt ? 'Отменить выполнение' : 'Выполнить задачу'; check.setAttribute('aria-label', `${check.title}: ${task.title}`);
+    check.addEventListener('click', async () => {
+      check.disabled = true;
+      try { const result = await api(`/tasks/${task.id}/${task.completedAt ? 'undo' : 'complete'}`, { method: 'POST', body: { revision: task.revision } }); await load(); notify(task.completedAt ? 'Задача возвращена' : result.task.completedAt ? 'Готово. Ещё один шаг!' : `Следующий срок: ${dateLabel(result.task.due)}`, task.completedAt ? null : async () => { await api(`/tasks/${task.id}/undo`, { method: 'POST', body: { revision: result.task.revision } }); await load(); }); }
+      catch (e) { $('#page-error').textContent = e.message; check.disabled = false; }
+    });
+    const content = node('div', 'task-main'); content.append(node('div', 'task-title', task.title), meta(task));
+    const actions = node('div', 'task-actions');
+    if (!task.completedAt) actions.append(actionButton('Редактировать задачу', '✎', () => openEdit(task)));
+    actions.append(actionButton('Удалить задачу', '×', async () => {
+      if (!confirm(`Удалить «${task.title}» и историю её выполнений?`)) return;
+      try { await api(`/tasks/${task.id}`, { method: 'DELETE', body: { revision: task.revision } }); await load(); notify('Задача удалена'); } catch (e) { $('#page-error').textContent = e.message; }
+    }, 'delete'));
+    row.append(check, content, actions); list.append(row);
+  }
+}
+function previewText(result) {
+  const t = result.parsed;
+  if (t.status === 'needs_review') return 'Не удалось распознать срок. Попробуйте уточнить формулировку.';
+  if (!t.title) return 'Добавьте название перед датой.';
+  let message = t.dateAction === 'clear' ? 'Без срока' : dateLabel(t.due);
+  if (t.recurrence) message += ` · ↻ ${recurringLabel(t)}`;
+  if (t.deadline) message += ` · Дедлайн: ${dateLabel(t.deadline)}`;
+  if (result.upcoming.length) message += ` · Далее: ${result.upcoming.map(d => dateLabel(d)).join(' → ')}`;
+  if (t.warnings.length) message += ' · Дата неоднозначна — проверьте результат.';
+  return message;
+}
+async function refreshPreview() {
+  const sequence = ++previewSequence; preview = null; $('#add-submit').disabled = true;
+  const source = $('#task-input').value.trim(); const el = $('#preview');
+  el.className = 'preview';
+  if (!source) { el.textContent = '✦ Пишите как думаете — дату и повторение распознаем сами.'; return; }
+  el.textContent = 'Распознаём дату…';
+  try {
+    const result = await api('/parse', { method: 'POST', body: { source, ...settings } });
+    if (sequence !== previewSequence) return;
+    preview = { ...result, source }; el.textContent = previewText(result);
+    const valid = result.parsed.status !== 'needs_review' && !!result.parsed.title;
+    el.className = `preview ${valid ? 'ready' : 'error'}`; $('#add-submit').disabled = !valid;
+  } catch (e) { if (sequence === previewSequence) { el.className = 'preview error'; el.textContent = e.message; } }
+}
+$('#task-input').addEventListener('input', () => { previewSequence++; preview = null; $('#add-submit').disabled = true; clearTimeout(timer); timer = setTimeout(refreshPreview, 250); });
+$('#add-form').addEventListener('submit', async event => {
+  event.preventDefault(); if (!preview || preview.source !== $('#task-input').value.trim()) return;
+  $('#add-submit').disabled = true;
+  try { await api('/tasks', { method: 'POST', body: { source: preview.source, reference: preview.reference, ...settings } }); $('#task-input').value = ''; await refreshPreview(); await load(); $('#task-input').focus(); notify('Задача добавлена'); }
+  catch (e) { $('#page-error').textContent = e.message; $('#add-submit').disabled = false; }
+});
+document.querySelectorAll('[data-example]').forEach(el => el.addEventListener('click', () => { $('#task-input').value = el.dataset.example; $('#task-input').focus(); refreshPreview(); }));
+document.querySelectorAll('[data-view]').forEach(el => el.addEventListener('click', async () => { view = el.dataset.view; try { await load(); } catch (e) { $('#page-error').textContent = e.message; } }));
+$('#search').addEventListener('input', render);
+function focusAdd() { if (['completed', 'history'].includes(view)) { view = 'all'; render(); } $('#task-input').focus(); }
+$('#focus-add').addEventListener('click', focusAdd);
+document.addEventListener('keydown', event => { if (event.key.toLowerCase() === 'n' && !event.ctrlKey && !event.metaKey && !event.altKey && !/INPUT|TEXTAREA|SELECT/.test(event.target.tagName) && !document.querySelector('dialog[open]') && !$('#workspace').hidden) { event.preventDefault(); focusAdd(); } });
+function notify(message, undo = null) {
+  clearTimeout(toastTimer); $('#toast-text').textContent = message; $('#toast').hidden = false; $('#toast-undo').hidden = !undo;
+  $('#toast-undo').onclick = async () => { $('#toast-undo').disabled = true; try { await undo(); $('#toast').hidden = true; } catch (e) { $('#toast-text').textContent = e.message; } finally { $('#toast-undo').disabled = false; } };
+  toastTimer = setTimeout(() => { $('#toast').hidden = true; }, 9000);
+}
+function openEdit(task) { editTask = task; $('#edit-title').value = task.title; $('#edit-schedule').value = ''; $('#edit-clear').checked = false; $('#edit-preview').textContent = `Текущий срок: ${dateLabel(task.due)}${task.recurrence ? ` · ${recurringLabel(task)}` : ''}`; $('#edit-error').textContent = ''; $('#edit-dialog').showModal(); }
+let editTimer, editSequence = 0;
+$('#edit-schedule').addEventListener('input', () => {
+  clearTimeout(editTimer); const sequence = ++editSequence;
+  editTimer = setTimeout(async () => { if (!$('#edit-schedule').value.trim()) { $('#edit-preview').textContent = 'Текущее расписание сохранится.'; return; } try { const result = await api('/parse', { method: 'POST', body: { source: `Task ${$('#edit-schedule').value}`, ...settings, timezone: editTask.due?.timezone || settings.timezone } }); if (sequence === editSequence) $('#edit-preview').textContent = previewText(result); } catch (e) { if (sequence === editSequence) $('#edit-preview').textContent = e.message; } }, 250);
+});
+$('#edit-form').addEventListener('submit', async event => {
+  event.preventDefault(); const button = event.submitter; button.disabled = true;
+  const body = { title: $('#edit-title').value.trim(), revision: editTask.revision, clearSchedule: $('#edit-clear').checked };
+  const expression = $('#edit-schedule').value.trim();
+  if (expression && !body.clearSchedule) { body.source = `Task ${expression}`; Object.assign(body, settings, { timezone: editTask.due?.timezone || settings.timezone }); }
+  try { await api(`/tasks/${editTask.id}`, { method: 'PATCH', body }); $('#edit-dialog').close(); await load(); notify('Изменения сохранены'); }
+  catch (e) { $('#edit-error').textContent = e.message; } finally { button.disabled = false; }
+});
+document.querySelectorAll('[data-close]').forEach(el => el.addEventListener('click', () => document.getElementById(el.dataset.close).close()));
+$('#settings-open').addEventListener('click', () => { $('#timezone').value = settings.timezone; $('#language').value = settings.language; $('#settings-error').textContent = ''; $('#settings-dialog').showModal(); });
+$('#settings-form').addEventListener('submit', event => {
+  event.preventDefault(); const timezone = $('#timezone').value.trim();
+  try { new Intl.DateTimeFormat('ru', { timeZone: timezone }); } catch { $('#settings-error').textContent = 'Укажите часовой пояс, например Europe/Moscow'; return; }
+  settings = { timezone, language: $('#language').value }; localStorage.setItem('opendoist.settings', JSON.stringify(settings)); $('#settings-dialog').close(); render(); refreshPreview();
+});
+$('#login-form').addEventListener('submit', async event => {
+  event.preventDefault(); event.submitter.disabled = true; $('#login-error').textContent = '';
+  try { await api('/login', { method: 'POST', body: { password: $('#password').value } }); $('#password').value = ''; $('#login-screen').hidden = true; $('#workspace').hidden = false; await load(); }
+  catch (e) { $('#login-error').textContent = e.message; } finally { event.submitter.disabled = false; }
+});
+$('#logout').addEventListener('click', async () => { try { await api('/logout', { method: 'POST', body: {} }); showLogin(); } catch (e) { $('#page-error').textContent = e.message; } });
+try { await api('/session'); $('#workspace').hidden = false; await load(); } catch (e) { showLogin(); if (e.status !== 401) $('#login-error').textContent = 'Сервер недоступен. Обновите страницу.'; }

@@ -1,0 +1,14 @@
+node_modules/
+.DS_Store
+.env
+.env.*
+!.env.example
+data/
+backups/
+*.log
+*.sqlite
+*.sqlite-*
+*.db
+*.db-*
+*.tar.gz
+deploy/preview.jpg

@@ -1,0 +1,5 @@
+# Replace tasks.example.com with your domain; point its DNS to your server.
+tasks.example.com {
+    encode zstd gzip
+    reverse_proxy 127.0.0.1:3000
+}
