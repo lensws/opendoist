@@ -33,12 +33,17 @@ jobs:
         run: npm test
       - name: Validate deployment scripts
         run: |
+          bash -n install/install.sh
+          bash -n install/smoke-test.sh
           bash -n deploy/automation/deploy.sh
           sh -n deploy/automation/ssh-command.sh
       - name: Build production image
         run: docker build --tag opendoist-ci:${{ github.sha }} .
       - name: Test inside the production image
-        run: docker run --rm --network none --volume "$PWD/test:/app/test:ro" --volume "$PWD/deploy/automation:/app/deploy/automation:ro" opendoist-ci:${{ github.sha }} node --test
+        run: docker run --rm --network none --volume "$PWD/test:/app/test:ro" --volume "$PWD/deploy/automation:/app/deploy/automation:ro" --volume "$PWD/install:/app/install:ro" opendoist-ci:${{ github.sha }} node --test
+
+      - name: Test Linux installer and persistence
+        run: bash install/smoke-test.sh
 
   deploy:
     name: Deploy to VPS
