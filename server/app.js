@@ -4,7 +4,7 @@ import { randomBytes, scryptSync, timingSafeEqual, createHmac } from 'node:crypt
 import { parseTask, occurrences } from '../src/index.js';
 import { Store, AppError } from './store.js';
 
-const assets = new Map(['index.html', 'app.js', 'style.css', 'icon.svg'].map(name => [name, readFileSync(new URL(`../public/${name}`, import.meta.url))]));
+const assets = new Map(['index.html', 'app.js', 'style.css', 'icon.svg', 'appearance.js'].map(name => [name, readFileSync(new URL(`../public/${name}`, import.meta.url))]));
 const mime = { html: 'text/html; charset=utf-8', js: 'text/javascript; charset=utf-8', css: 'text/css; charset=utf-8', svg: 'image/svg+xml' };
 const SESSION_AGE = 7 * 86400 * 1000;
 async function readJSON(req) {

@@ -1,11 +1,11 @@
 <!doctype html>
-<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#f7f6f2"><title>OpenDoist — меньше помнить, больше делать</title><link rel="icon" href="/icon.svg"><link rel="stylesheet" href="/style.css"><script type="module" src="/app.js"></script></head>
+<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#f7f6f2"><title>OpenDoist — меньше помнить, больше делать</title><link rel="icon" href="/icon.svg"><script src="/appearance.js"></script><link rel="stylesheet" href="/style.css"><script type="module" src="/app.js"></script></head>
 <body>
 <section id="login-screen" class="login-screen" hidden>
-  <form id="login-form" class="login-card"><img src="/icon.svg" width="46" height="46" alt=""><p class="eyebrow">ВАШЕ ЛИЧНОЕ ПРОСТРАНСТВО</p><h1>Освободите голову.</h1><p class="muted">Задачи, планы и немного спокойствия.<br>Всё — на вашем сервере.</p><label for="password">Пароль</label><input id="password" type="password" autocomplete="current-password" required autofocus><button class="primary" type="submit">Войти в OpenDoist <span>→</span></button><p id="login-error" class="error" role="alert"></p><small>Открытый код. Ваши данные. Ваш ритм.</small></form>
+  <form id="login-form" class="login-card"><span class="brand-mark" aria-hidden="true">✓</span><p class="eyebrow">ВАШЕ ЛИЧНОЕ ПРОСТРАНСТВО</p><h1>Освободите голову.</h1><p class="muted">Задачи, планы и немного спокойствия.<br>Всё — на вашем сервере.</p><label for="password">Пароль</label><input id="password" type="password" autocomplete="current-password" required autofocus><button class="primary" type="submit">Войти в OpenDoist <span>→</span></button><p id="login-error" class="error" role="alert"></p><small>Открытый код. Ваши данные. Ваш ритм.</small></form>
 </section>
 <div id="workspace" class="workspace" hidden>
-  <aside class="sidebar"><a class="brand" href="/"><img src="/icon.svg" width="30" height="30" alt="">OpenDoist<span class="beta">SELF-HOSTED</span></a>
+  <aside class="sidebar"><a class="brand" href="/"><span class="brand-mark" aria-hidden="true">✓</span>OpenDoist<span class="beta">SELF-HOSTED</span></a>
     <button id="focus-add" class="add-shortcut"><span>＋</span> Добавить задачу <kbd>N</kbd></button>
     <p class="nav-label">МОИ ЗАДАЧИ</p>
     <nav aria-label="Разделы задач">
@@ -30,6 +30,35 @@
   </main>
 </div>
 <dialog id="edit-dialog"><form id="edit-form"><div class="dialog-heading"><h2>Редактировать задачу</h2><button type="button" data-close="edit-dialog" class="icon-button" aria-label="Закрыть">×</button></div><label for="edit-title">Название</label><input id="edit-title" maxlength="500" required><label for="edit-schedule">Новый срок или повторение</label><input id="edit-schedule" maxlength="350" placeholder="Например, завтра в 10 или каждую пятницу"><p class="muted small">Оставьте пустым, чтобы сохранить текущее расписание.</p><label class="checkbox-label"><input id="edit-clear" type="checkbox"> Удалить срок и повторение</label><p id="edit-preview" class="small" aria-live="polite"></p><p id="edit-error" class="error" role="alert"></p><div class="dialog-actions"><button type="button" class="secondary" data-close="edit-dialog">Отмена</button><button class="primary" type="submit">Сохранить</button></div></form></dialog>
-<dialog id="settings-dialog"><form id="settings-form"><div class="dialog-heading"><h2>Настройки</h2><button type="button" data-close="settings-dialog" class="icon-button" aria-label="Закрыть">×</button></div><label for="timezone">Часовой пояс новых задач</label><input id="timezone" list="timezones" required><datalist id="timezones"><option value="Europe/Moscow"><option value="Europe/Berlin"><option value="Asia/Dubai"><option value="Asia/Tbilisi"><option value="America/New_York"><option value="UTC"></datalist><label for="language">Язык распознавания</label><select id="language"><option value="auto">Автоматически · RU / EN</option><option value="ru">Русский · день / месяц</option><option value="en">English · month / day</option></select><p class="muted small">Сохраняются в этом браузере. У существующих задач часовой пояс не меняется.</p><p id="settings-error" class="error" role="alert"></p><div class="dialog-actions"><button type="button" class="secondary" data-close="settings-dialog">Отмена</button><button class="primary" type="submit">Сохранить</button></div></form></dialog>
+<dialog id="settings-dialog" aria-labelledby="settings-title">
+  <form id="settings-form">
+    <div class="dialog-heading"><h2 id="settings-title">Настройки</h2><button type="button" data-close="settings-dialog" class="icon-button" aria-label="Закрыть">×</button></div>
+    <fieldset class="appearance-section"><legend>Тема оформления</legend>
+      <div class="theme-options">
+        <label class="theme-option"><input type="radio" name="theme" value="light"><span class="theme-symbol" aria-hidden="true">☀</span><span>Светлая</span></label>
+        <label class="theme-option"><input type="radio" name="theme" value="dark"><span class="theme-symbol" aria-hidden="true">☾</span><span>Тёмная</span></label>
+        <label class="theme-option"><input type="radio" name="theme" value="system"><span class="theme-symbol" aria-hidden="true">◐</span><span>Системная</span></label>
+      </div>
+      <p class="muted small">Системная тема меняется вместе с настройками устройства.</p>
+    </fieldset>
+    <fieldset class="appearance-section"><legend>Акцентный цвет</legend>
+      <div class="accent-options" role="group" aria-label="Готовые акцентные цвета">
+        <button type="button" class="color-swatch" data-accent="#c95736" aria-label="Терракотовый" aria-pressed="false"></button>
+        <button type="button" class="color-swatch" data-accent="#387a57" aria-label="Зелёный" aria-pressed="false"></button>
+        <button type="button" class="color-swatch" data-accent="#3478cb" aria-label="Синий" aria-pressed="false"></button>
+        <button type="button" class="color-swatch" data-accent="#8059c2" aria-label="Фиолетовый" aria-pressed="false"></button>
+        <button type="button" class="color-swatch" data-accent="#c3487b" aria-label="Розовый" aria-pressed="false"></button>
+        <button type="button" class="color-swatch" data-accent="#af7618" aria-label="Янтарный" aria-pressed="false"></button>
+        <label class="custom-accent" for="accent-color"><input type="color" id="accent-color" value="#c95736"><span>Свой цвет</span></label>
+      </div>
+      <p class="muted small">Изменения видны сразу. Нажмите «Сохранить», чтобы оставить их.</p>
+    </fieldset>
+    <div class="settings-divider"></div>
+    <label for="timezone">Часовой пояс новых задач</label><input id="timezone" list="timezones" required><datalist id="timezones"><option value="Europe/Moscow"><option value="Europe/Berlin"><option value="Asia/Dubai"><option value="Asia/Tbilisi"><option value="America/New_York"><option value="UTC"></datalist>
+    <label for="language">Язык распознавания</label><select id="language"><option value="auto">Автоматически · RU / EN</option><option value="ru">Русский · день / месяц</option><option value="en">English · month / day</option></select>
+    <p class="muted small">Сохраняются в этом браузере. У существующих задач часовой пояс не меняется.</p><p id="settings-error" class="error" role="alert"></p>
+    <div class="dialog-actions"><button type="button" class="secondary" data-close="settings-dialog">Отмена</button><button class="primary" type="submit">Сохранить</button></div>
+  </form>
+</dialog>
 <div id="toast" class="toast" role="status" hidden><span id="toast-text"></span><button id="toast-undo" hidden>Отменить</button></div>
 </body></html>

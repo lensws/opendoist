@@ -2,7 +2,7 @@ const $ = selector => document.querySelector(selector);
 let tasks = [], history = [], view = 'all', preview = null, editTask = null, previewSequence = 0, timer, toastTimer;
 let settings;
 try { settings = JSON.parse(localStorage.getItem('opendoist.settings')) || {}; } catch { settings = {}; }
-settings = { timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Moscow', language: 'auto', ...settings };
+settings = { timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Moscow', language: 'auto', ...settings, ...window.OpenDoistAppearance.normalize(settings) };
 try { new Intl.DateTimeFormat('ru', { timeZone: settings.timezone }); } catch { settings.timezone = 'Europe/Moscow'; }
 const titles = { all: ['Все задачи', 'Запишите, чтобы больше не держать в голове.'], today: ['Сегодня', 'Выберите главное. Остальное подождёт.'], upcoming: ['Предстоящие', 'Ваши планы, день за днём.'], completed: ['Выполненные', 'Маленькие шаги складываются в большой путь.'], history: ['История', 'Последние 100 выполнений, включая повторяющиеся задачи.'] };
 async function api(path, { method = 'GET', body } = {}) {
@@ -140,11 +140,40 @@ $('#edit-form').addEventListener('submit', async event => {
   catch (e) { $('#edit-error').textContent = e.message; } finally { button.disabled = false; }
 });
 document.querySelectorAll('[data-close]').forEach(el => el.addEventListener('click', () => document.getElementById(el.dataset.close).close()));
-$('#settings-open').addEventListener('click', () => { $('#timezone').value = settings.timezone; $('#language').value = settings.language; $('#settings-error').textContent = ''; $('#settings-dialog').showModal(); });
+function appearanceDraft() {
+  return { theme: $('#settings-form input[name="theme"]:checked')?.value || 'system', accent: $('#accent-color').value };
+}
+function previewAppearance() {
+  const draft = appearanceDraft();
+  window.OpenDoistAppearance.apply(draft);
+  document.querySelectorAll('[data-accent]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.accent === draft.accent)));
+}
+$('#settings-open').addEventListener('click', () => {
+  $('#timezone').value = settings.timezone; $('#language').value = settings.language;
+  document.querySelectorAll('input[name="theme"]').forEach(input => { input.checked = input.value === settings.theme; });
+  $('#accent-color').value = settings.accent;
+  $('#settings-error').textContent = ''; previewAppearance(); $('#settings-dialog').showModal();
+});
+document.querySelectorAll('input[name="theme"]').forEach(input => input.addEventListener('change', previewAppearance));
+document.querySelectorAll('[data-accent]').forEach(button => button.addEventListener('click', () => { $('#accent-color').value = button.dataset.accent; previewAppearance(); }));
+$('#accent-color').addEventListener('input', previewAppearance);
+// close covers Cancel, the close button, Escape, and expired-session dismissal.
+$('#settings-dialog').addEventListener('close', () => window.OpenDoistAppearance.apply(settings));
 $('#settings-form').addEventListener('submit', event => {
   event.preventDefault(); const timezone = $('#timezone').value.trim();
   try { new Intl.DateTimeFormat('ru', { timeZone: timezone }); } catch { $('#settings-error').textContent = 'Укажите часовой пояс, например Europe/Moscow'; return; }
-  settings = { timezone, language: $('#language').value }; localStorage.setItem('opendoist.settings', JSON.stringify(settings)); $('#settings-dialog').close(); render(); refreshPreview();
+  const next = { ...settings, timezone, language: $('#language').value, ...appearanceDraft() };
+  try { localStorage.setItem('opendoist.settings', JSON.stringify(next)); }
+  catch { $('#settings-error').textContent = 'Не удалось сохранить настройки. Разрешите хранение данных сайта в браузере.'; return; }
+  settings = next; window.OpenDoistAppearance.apply(settings); $('#settings-dialog').close(); render(); refreshPreview();
+});
+window.addEventListener('storage', event => {
+  if (event.key !== 'opendoist.settings') return;
+  try {
+    const updated = JSON.parse(event.newValue) || {};
+    settings = { ...settings, ...updated, ...window.OpenDoistAppearance.normalize(updated) };
+    if (!$('#settings-dialog').open) window.OpenDoistAppearance.apply(settings);
+  } catch { /* Ignore malformed settings from another tab. */ }
 });
 $('#login-form').addEventListener('submit', async event => {
   event.preventDefault(); event.submitter.disabled = true; $('#login-error').textContent = '';
