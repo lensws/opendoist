@@ -2,7 +2,7 @@ export function initTransfer({ api, reload, notify }) {
   const fileInput = document.querySelector('#import-file'), button = document.querySelector('#import-submit');
   const preview = document.querySelector('#import-preview'), error = document.querySelector('#import-error');
   let documentData = null, sequence = 0, importing = false;
-  const summary = result => `Новых задач: ${result.added}. Уже есть: ${result.skipped}. Записей истории: ${result.history}.`;
+  const summary = result => `Новых задач: ${result.added}. Уже есть: ${result.skipped}. Записей истории: ${result.history}.${result.projects || result.sections ? ` Проектов: ${result.projects}. Разделов: ${result.sections}.` : ''}`;
   fileInput.addEventListener('change', async () => {
     const current = ++sequence; documentData = null; button.disabled = true; error.textContent = ''; preview.textContent = '';
     const file = fileInput.files[0]; if (!file) return;
@@ -15,7 +15,7 @@ export function initTransfer({ api, reload, notify }) {
       if (current !== sequence) return;
       const result = await api('/import/preview', { method: 'POST', body: data });
       if (current !== sequence) return;
-      documentData = data; preview.textContent = summary(result); button.disabled = result.added === 0;
+      documentData = data; preview.textContent = summary(result); button.disabled = !result.added && !result.projects && !result.sections;
     } catch (e) { if (current === sequence) { preview.textContent = ''; error.textContent = e.message; } }
   });
   button.addEventListener('click', async () => {

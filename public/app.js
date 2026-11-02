@@ -1,19 +1,21 @@
+import { initProjects } from './projects.js';
 import { initTransfer } from './transfer.js';
 import { initNotifications } from './notifications.js';
 const $ = selector => document.querySelector(selector);
-let tasks = [], history = [], view = 'all', preview = null, editTask = null, previewSequence = 0, timer, toastTimer;
+let tasks = [], history = [], projects = [], sections = [], view = 'all', preview = null, editTask = null, previewSequence = 0, timer, toastTimer;
 let settings;
 try { settings = JSON.parse(localStorage.getItem('opendoist.settings')) || {}; } catch { settings = {}; }
 settings = { timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Moscow', language: 'auto', ...settings, ...window.OpenDoistAppearance.normalize(settings) };
 try { new Intl.DateTimeFormat('ru', { timeZone: settings.timezone }); } catch { settings.timezone = 'Europe/Moscow'; }
-const titles = { all: ['Все задачи', 'Запишите, чтобы больше не держать в голове.'], today: ['Сегодня', 'Выберите главное. Остальное подождёт.'], upcoming: ['Предстоящие', 'Ваши планы, день за днём.'], completed: ['Выполненные', 'Маленькие шаги складываются в большой путь.'], history: ['История', 'Последние 100 выполнений, включая повторяющиеся задачи.'] };
+const titles = { inbox: ['Входящие', 'Задачи, для которых ещё не выбран проект.'], all: ['Все задачи', 'Запишите, чтобы больше не держать в голове.'], today: ['Сегодня', 'Выберите главное. Остальное подождёт.'], upcoming: ['Предстоящие', 'Ваши планы, день за днём.'], completed: ['Выполненные', 'Маленькие шаги складываются в большой путь.'], history: ['История', 'Последние 100 выполнений, включая повторяющиеся задачи.'] };
 async function api(path, { method = 'GET', body } = {}) {
   const response = await fetch(`/api${path}`, { method, headers: body ? { 'Content-Type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined });
   const data = await response.json();
   if (!response.ok) { if (response.status === 401 && path !== '/login') showLogin(); const error = new Error(data.error || 'Не удалось выполнить запрос'); error.status = response.status; throw error; }
   return data;
 }
-initTransfer({ api, reload: async () => { tasks = (await api('/tasks')).tasks; if (view === 'history') history = (await api('/history')).history; render(); }, notify });
+const projectUI = initProjects({ api, getData: () => ({ projects, sections, tasks }), reload: load, selectView: next => { view = next; render(); }, notify });
+initTransfer({ api, reload: async () => { ({ projects, sections } = await api('/projects')); tasks = (await api('/tasks')).tasks; if (view === 'history') history = (await api('/history')).history; render(); }, notify });
 const { openReminders } = initNotifications({ api, reload: load, getSettings: () => settings, notify });
 function node(tag, className, text) { const el = document.createElement(tag); if (className) el.className = className; if (text !== undefined) el.textContent = text; return el; }
 function today(zone = settings.timezone) { return new Intl.DateTimeFormat('en-CA', { timeZone: zone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date()); }
@@ -40,6 +42,7 @@ async function loadSettings() {
 async function load() {
   await loadSettings();
   const result = await api('/tasks'); tasks = result.tasks;
+  ({ projects, sections } = await api('/projects'));
   if (view === 'history') history = (await api('/history')).history;
   render();
 }
@@ -49,16 +52,21 @@ function meta(task) {
   if (task.due) el.append(node('span', `date-pill${overdue(task) ? ' overdue' : ''}`, `${overdue(task) ? '◷ ' : '▦ '}${dateLabel(task.due)}`));
   if (task.recurrence) el.append(node('span', 'recurrence-pill', `↻ ${recurringLabel(task)}`));
   if (task.deadline) el.append(node('span', 'deadline-pill', `Дедлайн: ${dateLabel(task.deadline)}`));
+  const project = projects.find(p => p.id === task.projectId), section = sections.find(s => s.id === task.sectionId);
+  if (project) el.append(node('span', 'project-pill', `${project.emoji || '#'} ${project.name}${section ? ` / ${section.name}` : ''}`));
   return el;
 }
 function actionButton(label, symbol, handler, className = '') { const button = node('button', `icon-button ${className}`, symbol); button.type = 'button'; button.title = label; button.setAttribute('aria-label', label); button.addEventListener('click', handler); return button; }
 function render() {
   $('#page-error').textContent = '';
-  $('#view-title').textContent = titles[view][0]; $('#view-description').textContent = titles[view][1];
+  const entity = view.startsWith('project:') ? projects.find(p => p.id === view.slice(8)) : view.startsWith('section:') ? sections.find(s => s.id === view.slice(8)) : null;
+  if (!titles[view] && !entity) view = 'inbox';
+  $('#view-title').textContent = entity?.name || titles[view][0]; $('#view-description').textContent = entity ? (entity.projectId ? projects.find(p => p.id === entity.projectId)?.name : 'Задачи проекта') : titles[view][1];
+  projectUI.draw(view);
   $('#today-label').textContent = new Date().toLocaleDateString('ru', { weekday: 'long', day: 'numeric', month: 'long', timeZone: settings.timezone });
   document.querySelectorAll('[data-view]').forEach(el => { const active = el.dataset.view === view; el.classList.toggle('active', active); if (active) el.setAttribute('aria-current', 'page'); else el.removeAttribute('aria-current'); });
   const active = tasks.filter(t => !t.completedAt);
-  const filters = { all: active, today: active.filter(t => t.due && t.due.date <= today(t.due.timezone)), upcoming: active.filter(t => t.due && t.due.date > today(t.due.timezone)), completed: tasks.filter(t => t.completedAt) };
+  const filters = { inbox: active.filter(t => !t.projectId), all: active, today: active.filter(t => t.due && t.due.date <= today(t.due.timezone)), upcoming: active.filter(t => t.due && t.due.date > today(t.due.timezone)), completed: tasks.filter(t => t.completedAt) };
   for (const key of Object.keys(filters)) $(`#count-${key}`).textContent = filters[key].length;
   const query = $('#search').value.trim().toLocaleLowerCase();
   const list = $('#task-list'); list.replaceChildren();
@@ -70,11 +78,11 @@ function render() {
     for (const item of rows) { const row = node('article', 'task done'); row.append(node('span', 'task-check', '✓')); const content = node('div', 'task-main'); content.append(node('div', 'task-title', item.task.title), meta(item.task), node('div', 'task-meta', `Выполнено ${new Date(item.completedAt).toLocaleString('ru', { timeZone: settings.timezone })}`)); row.append(content); list.append(row); }
     $('#task-summary').textContent = `Выполнений: ${rows.length}`; $('#empty').hidden = !!rows.length; return;
   }
-  const selected = filters[view].filter(t => t.title.toLocaleLowerCase().includes(query)).sort((a, b) => (a.due?.date || '9999').localeCompare(b.due?.date || '9999') || (a.due?.time || '').localeCompare(b.due?.time || '') || b.createdAt.localeCompare(a.createdAt));
+  const selected = (entity ? active.filter(t => view.startsWith('project:') ? t.projectId === entity.id : t.sectionId === entity.id) : filters[view]).filter(t => t.title.toLocaleLowerCase().includes(query)).sort((a, b) => (view.startsWith('project:') ? sections.findIndex(s => s.id === a.sectionId) - sections.findIndex(s => s.id === b.sectionId) : 0) || (a.due?.date || '9999').localeCompare(b.due?.date || '9999') || (a.due?.time || '').localeCompare(b.due?.time || '') || b.createdAt.localeCompare(a.createdAt));
   $('#task-summary').textContent = `Задач: ${selected.length}`; $('#empty').hidden = !!selected.length;
   let lastGroup;
   for (const task of selected) {
-    const group = task.completedAt ? 'Готово' : overdue(task) ? 'Просрочено' : task.due ? dateLabel({ ...task.due, time: null }) : 'Без срока';
+    const group = view.startsWith('project:') ? sections.find(s => s.id === task.sectionId)?.name || 'Без раздела' : task.completedAt ? 'Готово' : overdue(task) ? 'Просрочено' : task.due ? dateLabel({ ...task.due, time: null }) : 'Без срока';
     if (group !== lastGroup) { list.append(node('h2', 'group-heading', group)); lastGroup = group; }
     const row = node('article', `task${task.completedAt ? ' done' : ''}`);
     const check = node('button', 'task-check', task.completedAt ? '✓' : ''); check.type = 'button'; check.title = task.completedAt ? 'Отменить выполнение' : 'Выполнить задачу'; check.setAttribute('aria-label', `${check.title}: ${task.title}`);
@@ -125,7 +133,7 @@ $('#task-input').addEventListener('input', () => { previewSequence++; preview = 
 $('#add-form').addEventListener('submit', async event => {
   event.preventDefault(); if (!preview || preview.source !== $('#task-input').value.trim()) return;
   $('#add-submit').disabled = true;
-  try { await api('/tasks', { method: 'POST', body: { source: preview.source, reference: preview.reference, ...settings } }); $('#task-input').value = ''; await refreshPreview(); await load(); $('#task-input').focus(); notify('Задача добавлена'); }
+  try { await api('/tasks', { method: 'POST', body: { source: preview.source, reference: preview.reference, ...settings, ...projectUI.placement('add') } }); $('#task-input').value = ''; await refreshPreview(); await load(); $('#task-input').focus(); notify('Задача добавлена'); }
   catch (e) { $('#page-error').textContent = e.message; $('#add-submit').disabled = false; }
 });
 document.querySelectorAll('[data-example]').forEach(el => el.addEventListener('click', () => { $('#task-input').value = el.dataset.example; $('#task-input').focus(); refreshPreview(); }));
@@ -139,7 +147,7 @@ function notify(message, undo = null) {
   $('#toast-undo').onclick = async () => { $('#toast-undo').disabled = true; try { await undo(); $('#toast').hidden = true; } catch (e) { $('#toast-text').textContent = e.message; } finally { $('#toast-undo').disabled = false; } };
   toastTimer = setTimeout(() => { $('#toast').hidden = true; }, 9000);
 }
-function openEdit(task) { editTask = task; $('#edit-title').value = task.title; $('#edit-schedule').value = ''; $('#edit-clear').checked = false; $('#edit-preview').textContent = `Текущий срок: ${dateLabel(task.due)}${task.recurrence ? ` · ${recurringLabel(task)}` : ''}`; $('#edit-error').textContent = ''; $('#edit-dialog').showModal(); }
+function openEdit(task) { editTask = task; projectUI.fillPlacement('edit', task.projectId, task.sectionId); $('#edit-title').value = task.title; $('#edit-schedule').value = ''; $('#edit-clear').checked = false; $('#edit-preview').textContent = `Текущий срок: ${dateLabel(task.due)}${task.recurrence ? ` · ${recurringLabel(task)}` : ''}`; $('#edit-error').textContent = ''; $('#edit-dialog').showModal(); }
 let editTimer, editSequence = 0;
 $('#edit-schedule').addEventListener('input', () => {
   clearTimeout(editTimer); const sequence = ++editSequence;
@@ -147,7 +155,7 @@ $('#edit-schedule').addEventListener('input', () => {
 });
 $('#edit-form').addEventListener('submit', async event => {
   event.preventDefault(); const button = event.submitter; button.disabled = true;
-  const body = { title: $('#edit-title').value.trim(), revision: editTask.revision, clearSchedule: $('#edit-clear').checked };
+  const body = { title: $('#edit-title').value.trim(), revision: editTask.revision, clearSchedule: $('#edit-clear').checked, ...projectUI.placement('edit') };
   const expression = $('#edit-schedule').value.trim();
   if (expression && !body.clearSchedule) { body.source = `Task ${expression}`; Object.assign(body, settings, { timezone: editTask.due?.timezone || settings.timezone }); }
   try { await api(`/tasks/${editTask.id}`, { method: 'PATCH', body }); $('#edit-dialog').close(); await load(); notify('Изменения сохранены'); }
@@ -186,8 +194,8 @@ $('#settings-form').addEventListener('submit', async event => {
   finally { button.disabled = false; }
 });
 window.addEventListener('focus', async () => {
-  if ($('#workspace').hidden || $('#settings-dialog').open) return;
-  try { await loadSettings(); render(); refreshPreview(); } catch (error) { $('#page-error').textContent = error.message; }
+  if ($('#workspace').hidden || document.querySelector('dialog[open]')) return;
+  try { await load(); refreshPreview(); } catch (error) { $('#page-error').textContent = error.message; }
 });
 $('#login-form').addEventListener('submit', async event => {
   event.preventDefault(); event.submitter.disabled = true; $('#login-error').textContent = '';
@@ -196,3 +204,5 @@ $('#login-form').addEventListener('submit', async event => {
 });
 $('#logout').addEventListener('click', async () => { try { await api('/logout', { method: 'POST', body: {} }); showLogin(); } catch (e) { $('#page-error').textContent = e.message; } });
 try { await api('/session'); $('#workspace').hidden = false; await load(); } catch (e) { showLogin(); if (e.status !== 401) $('#login-error').textContent = 'Сервер недоступен. Обновите страницу.'; }
+
+setInterval(async () => { if (document.hidden || $('#workspace').hidden || document.querySelector('dialog[open]') || document.activeElement?.matches('input,textarea,select')) return; try { await load(); } catch { /* Reconnect on the next refresh. */ } }, 15000);

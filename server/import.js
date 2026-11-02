@@ -1,5 +1,6 @@
 import { DateTime } from 'luxon';
 import rrule from 'rrule';
+import { entityFields } from './projects.js';
 import { AppError } from './store.js';
 const { RRule } = rrule;
 export const IMPORT_LIMIT = 10 * 1024 * 1024;
@@ -42,6 +43,7 @@ function recurrence(value, schedule, label) {
 function task(value, label) {
   if (!obj(value) || !uuid(value.id) || !str(value.title, 500) || !value.title.trim() || !Number.isSafeInteger(value.revision) || value.revision < 1 || !stamp(value.createdAt) || !stamp(value.updatedAt) || (value.completedAt != null && !stamp(value.completedAt))) fail(`некорректная задача (${label})`);
   const result = { id: value.id.toLowerCase(), title: value.title, revision: value.revision, createdAt: value.createdAt, updatedAt: value.updatedAt, completedAt: value.completedAt ?? null, due: due(value.due, label), deadline: due(value.deadline, label) };
+  for (const key of ['projectId', 'sectionId']) { if (value[key] != null && !uuid(value[key])) fail(`некорректный проект или раздел (${label})`); result[key] = value[key]?.toLowerCase() || null; }
   result.recurrence = recurrence(value.recurrence, result.due, label);
   result.status = result.due ? 'scheduled' : 'unscheduled';
   for (const key of ['source', 'language', 'dateAction']) if (value[key] !== undefined) { if (!str(value[key])) fail(`некорректное поле ${key} (${label})`); result[key] = value[key]; }
@@ -70,5 +72,26 @@ export function validateImport(document) {
     if (!ids.has(snapshot.id)) fail(`история ссылается на отсутствующую задачу, запись ${i + 1}`);
     return { completedAt: value.completedAt, task: snapshot };
   });
-  return { tasks, history };
+  const entities = (items, section = false) => {
+    if (!Array.isArray(items) || items.length > 10000) fail('некорректный список проектов или разделов');
+    const result = items.map(e => {
+      if (!obj(e) || !uuid(e.id) || !Number.isSafeInteger(e.revision) || e.revision < 1 || (section && !uuid(e.projectId))) fail('некорректный проект или раздел');
+      return { id: e.id.toLowerCase(), ...entityFields(e), revision: e.revision, ...(section ? { projectId: e.projectId.toLowerCase() } : {}) };
+    });
+    if (new Set(result.map(e => e.id)).size !== result.length) fail('повторяются ID проектов или разделов');
+    return result;
+  };
+  const projects = entities(document.projects || []), sections = entities(document.sections || [], true);
+  const projectIds = new Set(projects.map(p => p.id));
+  for (const section of sections) if (!projectIds.has(section.projectId)) fail('раздел ссылается на отсутствующий проект');
+  for (const t of tasks) {
+    if (t.projectId && !projectIds.has(t.projectId)) fail('задача ссылается на отсутствующий проект');
+    if (t.sectionId && !sections.some(s => s.id === t.sectionId && s.projectId === t.projectId)) fail('раздел задачи не принадлежит её проекту');
+  }
+  // Historical snapshots can refer to a project that was deleted before export.
+  for (const h of history) {
+    if (!projectIds.has(h.task.projectId)) { h.task.projectId = null; h.task.sectionId = null; }
+    if (!sections.some(s => s.id === h.task.sectionId && s.projectId === h.task.projectId)) h.task.sectionId = null;
+  }
+  return { tasks, history, projects, sections };
 }

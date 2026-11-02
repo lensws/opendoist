@@ -6,7 +6,7 @@ import { occurrences } from '../src/index.js';
 
 export const notificationDefaults = () => ({
   email: { enabled: false, host: '', port: 587, secure: false, user: '', password: '', from: '', to: '' },
-  telegram: { enabled: false, token: '', chatId: '' },
+  telegram: { enabled: false, token: '', chatId: '', acceptTasks: false, receiveSince: 0 },
   digest: { enabled: false, mode: 'morning', time: '08:00', timezone: 'Europe/Moscow', channels: ['email'], updatedAt: 0 },
 });
 const bad = message => { throw new AppError(400, message); };
@@ -21,11 +21,12 @@ export function publicConfig(config) {
 }
 export function validateConfig(patch, previous, now = Date.now()) {
   if (!object(patch) || Object.keys(patch).some(k => !['email', 'telegram', 'digest'].includes(k))) bad('Некорректные настройки уведомлений');
+  previous = { ...previous, telegram: { ...notificationDefaults().telegram, ...previous.telegram } };
   const next = structuredClone(previous);
   for (const section of Object.keys(patch)) {
     if (!object(patch[section])) bad('Некорректные настройки уведомлений');
     for (const [key, value] of Object.entries(patch[section])) {
-      if (!Object.hasOwn(next[section], key) || key === 'updatedAt') bad('Неизвестная настройка уведомлений');
+      if (!Object.hasOwn(next[section], key) || ['updatedAt', 'receiveSince'].includes(key)) bad('Неизвестная настройка уведомлений');
       // Empty password/token means keep the saved secret. null explicitly removes it.
       if (['password', 'token'].includes(key) && value === '') continue;
       next[section][key] = ['password', 'token'].includes(key) && value === null ? '' : value;
@@ -41,6 +42,9 @@ export function validateConfig(patch, previous, now = Date.now()) {
   if (t.enabled && (!/^\d+:[\w-]{20,}$/.test(t.token) || !/^(?:-?\d+|@[a-z0-9_]{5,})$/i.test(t.chatId))) bad('Для Telegram укажите токен бота и Chat ID');
   if (!['morning', 'evening'].includes(d.mode) || typeof d.time !== 'string' || !/^([01]\d|2[0-3]):[0-5]\d$/.test(d.time) || !zoneValid(d.timezone) || !channelsValid(d.channels)) bad('Проверьте время, часовой пояс и каналы сводки');
   if (d.enabled && d.channels.some(c => !next[c].enabled)) bad('Сначала включите выбранные каналы сводки');
+  if (!t.enabled) t.acceptTasks = false;
+  if (typeof t.acceptTasks !== 'boolean' || (t.acceptTasks && (!t.enabled || !/^[1-9]\d*$/.test(t.chatId)))) bad('Создание задач доступно только в подключённом личном чате: укажите положительный числовой Chat ID');
+  if (t.acceptTasks && (!previous.telegram.acceptTasks || previous.telegram.token !== t.token || previous.telegram.chatId !== t.chatId)) t.receiveSince = Math.floor(now / 1000) * 1000;
   const comparable = c => JSON.stringify({ ...c.digest, updatedAt: 0 });
   if (comparable(next) !== comparable(previous)) next.digest.updatedAt = now;
   return next;
@@ -114,7 +118,7 @@ export class NotificationWorker {
   constructor(store, { send = sendNotification, now = Date.now, publicUrl = '' } = {}) {
     this.store = store; this.send = send; this.now = now; this.publicUrl = publicUrl; this.running = null;
   }
-  config() { return this.store.notificationConfig() || notificationDefaults(); }
+  config() { const saved = this.store.notificationConfig() || notificationDefaults(); return { ...saved, telegram: { ...notificationDefaults().telegram, ...saved.telegram } }; }
   start() { this.timer = setInterval(() => this.tick().catch(() => console.error('Notification scheduler failed')), 15000); this.timer.unref(); this.tick().catch(() => console.error('Notification scheduler failed')); }
   async stop() { clearInterval(this.timer); await this.running; }
   tick() {

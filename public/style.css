@@ -137,3 +137,17 @@ input[type=checkbox], input[type=radio] { accent-color: var(--accent); }
 #import-file::file-selector-button { border: 1px solid var(--border); border-radius: 5px; background: var(--surface-soft); color: var(--text); padding: 6px 8px; margin-right: 8px; cursor: pointer; }
 .task-transfer summary { font-weight: 650; }
 @media(max-width:700px) { .sidebar-search { margin: 12px 0; width: 100%; } }
+.sidebar { overflow-y: auto; }
+.projects-heading { display:flex; align-items:center; justify-content:space-between; color:var(--muted); font-size:11px; letter-spacing:1px; margin:24px 12px 8px; }
+.project-row { display:flex; align-items:center; min-width:0; }
+.project-row .nav-item { flex:1; min-width:0; }
+.project-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.project-icon { width:22px; flex-shrink:0; font-size:18px; text-align:center; }
+.section-row { padding-left:20px; }
+.section-row .nav-item { font-size:12px; }
+.composer-placement { display:flex; gap:10px; padding:0 18px 12px; }
+.composer-placement select { min-width:0; max-width:50%; border:1px solid var(--border); border-radius:6px; padding:5px 8px; background:var(--surface); color:var(--muted); font:inherit; font-size:12px; }
+#entity-dialog { max-height:calc(100dvh - 40px); overflow:auto; }
+#entity-color { height:46px; padding:5px; }
+.sidebar-search input:focus { outline:none; }
+@media(max-width:700px) { #project-list { display:flex; flex-wrap:wrap; } .projects-heading { margin-top:12px; } .project-row { max-width:100%; } }

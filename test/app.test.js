@@ -215,3 +215,28 @@ test('import accepts exports over the ordinary request limit and rolls back stor
   assert.equal((await app.request('/api/import', document)).data.added, 60);
   assert.equal(app.store.list().length, 61);
 });
+
+test('projects and sections support icons, revision checks, task moves, export and non-destructive removal', async t => {
+  const app = await start(), target = await start(); t.after(() => app.close()); t.after(() => target.close());
+  assert.equal((await app.request('/api/projects')).response.status, 401); await app.login(); await target.login();
+  const fields = { name: 'Работа', iconType: 'emoji', emoji: '💼', color: '#3478cb' };
+  let project = (await app.request('/api/projects', fields)).data.entity;
+  assert.ok(project.id); assert.equal(project.emoji, '💼');
+  const section = (await app.request('/api/sections', { ...fields, name: 'В процессе', projectId: project.id, iconType: 'color' })).data.entity;
+  let task = (await app.request('/api/tasks', { source: 'Отчёт завтра', projectId: project.id, sectionId: section.id })).data.task;
+  assert.equal(task.sectionId, section.id);
+  assert.equal((await app.request('/api/tasks', { source: 'Bad', sectionId: section.id })).response.status, 400);
+  assert.equal((await app.request('/api/projects', fields)).response.status, 409);
+  assert.equal((await app.request('/api/projects', { ...fields, name: 'Bad', emoji: 'text' })).response.status, 400);
+  const backup = (await app.request('/api/export')).data;
+  const imported = (await target.request('/api/import', backup)).data;
+  assert.equal(imported.projects, 1); assert.equal(imported.sections, 1);
+  assert.equal(target.store.get(task.id).sectionId, section.id);
+  project = (await app.request(`/api/projects/${project.id}`, { ...fields, name: 'Работа 2', revision: project.revision }, 'PATCH')).data.entity;
+  assert.equal((await app.request(`/api/projects/${project.id}`, { ...fields, revision: 1 }, 'PATCH')).response.status, 409);
+  await app.request(`/api/sections/${section.id}`, { revision: section.revision }, 'DELETE');
+  task = app.store.get(task.id); assert.equal(task.sectionId, null); assert.equal(task.projectId, project.id);
+  await app.request(`/api/projects/${project.id}`, { revision: project.revision }, 'DELETE');
+  task = app.store.get(task.id); assert.equal(task.projectId, null); assert.equal(task.title, 'Отчёт');
+  assert.equal((await app.request('/api/projects')).data.projects.length, 0);
+});

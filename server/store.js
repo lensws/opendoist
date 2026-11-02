@@ -2,6 +2,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { randomUUID } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
+import { entityFields } from './projects.js';
 import { nextAfterCompletion } from '../src/index.js';
 
 export class AppError extends Error {
@@ -24,7 +25,50 @@ export class Store {
         next_attempt INTEGER NOT NULL, lease_until INTEGER NOT NULL DEFAULT 0, sent_at INTEGER, last_error TEXT
       );
       CREATE INDEX IF NOT EXISTS notification_pending ON notification_outbox(status,next_attempt);
-      PRAGMA user_version=3;`);
+      CREATE TABLE IF NOT EXISTS projects (id TEXT PRIMARY KEY, data TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS sections (id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE, data TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS telegram_cursors (bot TEXT PRIMARY KEY, offset INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS telegram_replies (bot TEXT NOT NULL, update_id INTEGER NOT NULL, chat_id TEXT NOT NULL, text TEXT NOT NULL, sent INTEGER NOT NULL DEFAULT 0, attempts INTEGER NOT NULL DEFAULT 0, next_attempt INTEGER NOT NULL, PRIMARY KEY(bot,update_id));
+      PRAGMA user_version=4;`);
+  }
+  projects() { return this.db.prepare('SELECT data FROM projects ORDER BY rowid').all().map(r => JSON.parse(r.data)); }
+  sections() { return this.db.prepare('SELECT data FROM sections ORDER BY rowid').all().map(r => JSON.parse(r.data)); }
+  placement(projectId = null, sectionId = null) {
+    if (projectId !== null && !this.projects().some(p => p.id === projectId)) throw new AppError(400, 'Проект не найден');
+    if (sectionId !== null && !this.sections().some(s => s.id === sectionId && s.projectId === projectId)) throw new AppError(400, 'Раздел не принадлежит проекту');
+    return { projectId, sectionId };
+  }
+  saveEntity(kind, body, id = null) {
+    const table = kind === 'project' ? 'projects' : 'sections';
+    const previous = id ? this.db.prepare(`SELECT data FROM ${table} WHERE id=?`).get(id) : null;
+    if (id && !previous) throw new AppError(404, 'Не найдено');
+    const old = previous && JSON.parse(previous.data);
+    if (old && body.revision !== old.revision) throw new AppError(409, 'Изменено в другом окне. Обновите список.');
+    const fields = entityFields(body), list = kind === 'project' ? this.projects() : this.sections();
+    const projectId = old?.projectId || body.projectId;
+    if (kind === 'section') this.placement(projectId, null);
+    if (kind === 'section' && !projectId) throw new AppError(400, 'Выберите проект');
+    if (list.some(e => e.id !== id && (kind === 'project' || e.projectId === projectId) && e.name.toLocaleLowerCase() === fields.name.toLocaleLowerCase())) throw new AppError(409, 'Такое название уже существует');
+    const entity = { id: id || randomUUID(), ...fields, revision: (old?.revision || 0) + 1, ...(kind === 'section' ? { projectId } : {}) };
+    if (kind === 'project') this.db.prepare('INSERT INTO projects (id,data) VALUES (?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data').run(entity.id, JSON.stringify(entity));
+    else this.db.prepare('INSERT INTO sections (id,project_id,data) VALUES (?,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data').run(entity.id, projectId, JSON.stringify(entity));
+    return entity;
+  }
+  deleteEntity(kind, id, revision) {
+    const table = kind === 'project' ? 'projects' : 'sections';
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      const row = this.db.prepare(`SELECT data FROM ${table} WHERE id=?`).get(id);
+      if (!row) throw new AppError(404, 'Не найдено');
+      if (JSON.parse(row.data).revision !== revision) throw new AppError(409, 'Изменено в другом окне. Обновите список.');
+      for (const task of this.list()) if (kind === 'project' ? task.projectId === id : task.sectionId === id) {
+        if (kind === 'project') task.projectId = null;
+        task.sectionId = null; task.revision++; task.updatedAt = new Date().toISOString();
+        this.db.prepare('UPDATE tasks SET data=?,revision=? WHERE id=?').run(JSON.stringify(task), task.revision, task.id);
+      }
+      this.db.prepare(`DELETE FROM ${table} WHERE id=?`).run(id);
+      this.db.exec('COMMIT');
+    } catch (error) { this.db.exec('ROLLBACK'); throw error; }
   }
   settings() {
     const row = this.db.prepare('SELECT data FROM settings WHERE id=1').get();
@@ -59,7 +103,14 @@ export class Store {
       const ids = new Set(fresh.map(task => task.id));
       const history = document.history.filter(item => ids.has(item.task.id));
       const result = { added: fresh.length, skipped: document.tasks.length - fresh.length, history: history.length };
+      const newProjects = document.projects.filter(p => !this.projects().some(e => e.id === p.id));
+      const newSections = document.sections.filter(s => !this.sections().some(e => e.id === s.id));
+      if (newProjects.length || newSections.length) { result.projects = newProjects.length; result.sections = newSections.length; }
+      // Reject section identity collisions rather than silently moving imported tasks.
+      for (const s of document.sections) if (this.sections().some(e => e.id === s.id && e.projectId !== s.projectId)) throw new AppError(400, 'Раздел из файла уже принадлежит другому проекту');
       if (!preview) {
+        for (const p of newProjects) this.db.prepare('INSERT INTO projects (id,data) VALUES (?,?)').run(p.id, JSON.stringify(p));
+        for (const s of newSections) this.db.prepare('INSERT INTO sections (id,project_id,data) VALUES (?,?,?)').run(s.id, s.projectId, JSON.stringify(s));
         const reminderIds = new Map(), importedAt = Date.now();
         const prepare = task => ({ ...task, reminders: task.reminders.map(r => {
           const key = `${task.id}:${r.id}`;

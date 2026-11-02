@@ -4,9 +4,10 @@ import { randomBytes, scryptSync, timingSafeEqual, createHmac } from 'node:crypt
 import { parseTask, occurrences } from '../src/index.js';
 import { validateImport, IMPORT_LIMIT } from './import.js';
 import { Store, AppError } from './store.js';
+import { TelegramInbox } from './telegram.js';
 import { NotificationWorker, publicConfig, validateConfig, makeReminder } from './notifications.js';
 
-const assets = new Map(['index.html', 'app.js', 'style.css', 'icon.svg', 'appearance.js', 'notifications.js', 'transfer.js'].map(name => [name, readFileSync(new URL(`../public/${name}`, import.meta.url))]));
+const assets = new Map(['index.html', 'app.js', 'style.css', 'icon.svg', 'appearance.js', 'notifications.js', 'transfer.js', 'projects.js'].map(name => [name, readFileSync(new URL(`../public/${name}`, import.meta.url))]));
 const mime = { html: 'text/html; charset=utf-8', js: 'text/javascript; charset=utf-8', css: 'text/css; charset=utf-8', svg: 'image/svg+xml' };
 const SESSION_AGE = 7 * 86400 * 1000;
 async function readJSON(req, limit = 16384) {
@@ -37,6 +38,7 @@ export function createApp({ password, database = './data/opendoist.sqlite', publ
   if (allowedOrigin?.startsWith('https:')) secureCookie = true;
   const store = new Store(database);
   const notifications = new NotificationWorker(store, { publicUrl: allowedOrigin || '', ...(notificationSender ? { send: notificationSender } : {}) });
+  const telegram = new TelegramInbox(store);
   let lastTest = 0;
   const salt = randomBytes(32), expected = scryptSync(password, salt, 32);
   const sessionHash = token => createHmac('sha256', password).update(token).digest('hex');
@@ -80,7 +82,7 @@ export function createApp({ password, database = './data/opendoist.sqlite', publ
         store.db.prepare('DELETE FROM sessions WHERE hash=?').run(sessionHash(token));
         return send(200, { ok: true }, { 'Set-Cookie': cookie('', 0) });
       }
-      if (path === '/api/notifications' && method === 'GET') return send(200, { config: publicConfig(notifications.config()), deliveries: store.notificationStatus() });
+      if (path === '/api/notifications' && method === 'GET') return send(200, { config: publicConfig(notifications.config()), deliveries: store.notificationStatus(), telegram: telegram.status });
       if (path === '/api/notifications' && method === 'PATCH') {
         const config = validateConfig(await readJSON(req), notifications.config());
         store.saveNotificationConfig(config);
@@ -95,6 +97,15 @@ export function createApp({ password, database = './data/opendoist.sqlite', publ
         catch { throw new AppError(502, 'Не удалось отправить. Проверьте параметры канала и доступность сервиса.'); }
         return send(200, { ok: true });
       }
+      if (path === '/api/projects' && method === 'GET') return send(200, { projects: store.projects(), sections: store.sections() });
+      const entityMatch = /^\/api\/(projects|sections)(?:\/([a-f0-9-]+))?$/.exec(path);
+      if (entityMatch && ['POST', 'PATCH', 'DELETE'].includes(method)) {
+        const [, collection, id] = entityMatch, body = await readJSON(req), kind = collection === 'projects' ? 'project' : 'section';
+        if (method === 'POST' && !id) return send(201, { entity: store.saveEntity(kind, body) });
+        if (method === 'PATCH' && id) return send(200, { entity: store.saveEntity(kind, body, id) });
+        if (method === 'DELETE' && id) { store.deleteEntity(kind, id, body.revision); return send(200, { ok: true }); }
+        throw new AppError(405, 'Метод не поддерживается');
+      }
       if (path === '/api/settings' && method === 'GET') return send(200, { settings: store.settings() });
       if (path === '/api/settings' && method === 'PATCH') return send(200, { settings: store.saveSettings(await readJSON(req)) });
       if (path === '/api/tasks' && method === 'GET') return send(200, { tasks: store.list() });
@@ -103,15 +114,15 @@ export function createApp({ password, database = './data/opendoist.sqlite', publ
         const document = validateImport(await readJSON(req, IMPORT_LIMIT));
         return send(200, store.importTasks(document, path.endsWith('/preview')));
       }
-      if (path === '/api/export' && method === 'GET') return send(200, { version: 1, exportedAt: new Date().toISOString(), tasks: store.list(), history: store.history() }, { 'Content-Disposition': 'attachment; filename="opendoist-export.json"' });
+      if (path === '/api/export' && method === 'GET') return send(200, { version: 1, exportedAt: new Date().toISOString(), tasks: store.list(), history: store.history(), projects: store.projects(), sections: store.sections() }, { 'Content-Disposition': 'attachment; filename="opendoist-export.json"' });
       if (path === '/api/parse' && method === 'POST') {
         const preview = parse(await readJSON(req));
         const upcoming = preview.parsed.recurrence?.mode === 'calendar' ? occurrences(preview.parsed, { after: preview.reference, count: 3 }) : [];
         return send(200, { ...preview, upcoming });
       }
       if (path === '/api/tasks' && method === 'POST') {
-        const { parsed } = parse(await readJSON(req));
-        return send(201, { task: store.create(saveable(parsed)) });
+        const body = await readJSON(req), { parsed } = parse(body);
+        return send(201, { task: store.create({ ...saveable(parsed), ...store.placement(body.projectId ?? null, body.sectionId ?? null) }) });
       }
       const reminderMatch = /^\/api\/tasks\/([a-f0-9-]+)\/reminders(?:\/([a-f0-9-]+))?$/.exec(path);
       if (reminderMatch && (method === 'POST' || method === 'DELETE')) {
@@ -140,7 +151,8 @@ export function createApp({ password, database = './data/opendoist.sqlite', publ
         let schedule;
         if (body.source !== undefined) schedule = saveable(parse(body).parsed);
         const task = store.mutate(id, body.revision, previous => {
-          const next = { ...previous, ...(schedule || {}), deadline: schedule?.deadline ?? previous.deadline, title };
+          const placement = store.placement(body.projectId === undefined ? previous.projectId ?? null : body.projectId, body.sectionId === undefined ? previous.sectionId ?? null : body.sectionId);
+          const next = { ...previous, ...placement, ...(schedule || {}), deadline: schedule?.deadline ?? previous.deadline, title };
           if (body.clearSchedule === true) { next.due = null; next.recurrence = null; next.status = 'unscheduled'; }
           return next;
         });
@@ -152,5 +164,5 @@ export function createApp({ password, database = './data/opendoist.sqlite', publ
   server.requestTimeout = 15000;
   server.headersTimeout = 10000;
   server.on('close', () => store.close());
-  return { server, store, notifications };
+  return { server, store, notifications, telegram };
 }
