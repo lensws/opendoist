@@ -7,7 +7,7 @@ let settings;
 try { settings = JSON.parse(localStorage.getItem('opendoist.settings')) || {}; } catch { settings = {}; }
 settings = { timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Moscow', language: 'auto', ...settings, ...window.OpenDoistAppearance.normalize(settings) };
 try { new Intl.DateTimeFormat('ru', { timeZone: settings.timezone }); } catch { settings.timezone = 'Europe/Moscow'; }
-const titles = { inbox: ['Входящие', 'Задачи, для которых ещё не выбран проект.'], all: ['Все задачи', 'Запишите, чтобы больше не держать в голове.'], today: ['Сегодня', 'Выберите главное. Остальное подождёт.'], upcoming: ['Предстоящие', 'Ваши планы, день за днём.'], completed: ['Выполненные', 'Маленькие шаги складываются в большой путь.'], history: ['История', 'Последние 100 выполнений, включая повторяющиеся задачи.'] };
+const titles = { inbox: 'Входящие', all: 'Все задачи', today: 'Сегодня', upcoming: 'Предстоящие', completed: 'Выполненные', history: 'История' };
 async function api(path, { method = 'GET', body } = {}) {
   const response = await fetch(`/api${path}`, { method, headers: body ? { 'Content-Type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined });
   const data = await response.json();
@@ -61,7 +61,7 @@ function render() {
   $('#page-error').textContent = '';
   const entity = view.startsWith('project:') ? projects.find(p => p.id === view.slice(8)) : view.startsWith('section:') ? sections.find(s => s.id === view.slice(8)) : null;
   if (!titles[view] && !entity) view = 'inbox';
-  $('#view-title').textContent = entity?.name || titles[view][0]; $('#view-description').textContent = entity ? (entity.projectId ? projects.find(p => p.id === entity.projectId)?.name : 'Задачи проекта') : titles[view][1];
+  $('#view-title').textContent = entity?.name || titles[view];
   projectUI.draw(view);
   document.querySelectorAll('[data-view]').forEach(el => { const active = el.dataset.view === view; el.classList.toggle('active', active); if (active) el.setAttribute('aria-current', 'page'); else el.removeAttribute('aria-current'); });
   const active = tasks.filter(t => !t.completedAt);
