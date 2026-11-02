@@ -2,7 +2,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { randomUUID } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
-import { entityFields } from './projects.js';
+import { entityFields, projectView } from './projects.js';
 import { nextAfterCompletion } from '../src/index.js';
 
 export class AppError extends Error {
@@ -60,10 +60,18 @@ export class Store {
     if (kind === 'section') this.placement(projectId, null);
     if (kind === 'section' && !projectId) throw new AppError(400, 'Выберите проект');
     if (list.some(e => e.id !== id && (kind === 'project' || e.projectId === projectId) && e.name.toLocaleLowerCase() === fields.name.toLocaleLowerCase())) throw new AppError(409, 'Такое название уже существует');
-    const entity = { id: id || randomUUID(), ...fields, revision: (old?.revision || 0) + 1, ...(kind === 'section' ? { projectId } : { position: old?.position ?? (id ? list.find(p => p.id === id).position : Math.max(-1, ...list.map(p => p.position)) + 1) }) };
+    const entity = { id: id || randomUUID(), ...fields, revision: (old?.revision || 0) + 1, ...(kind === 'section' ? { projectId } : { view: projectView(old?.view), position: old?.position ?? (id ? list.find(p => p.id === id).position : Math.max(-1, ...list.map(p => p.position)) + 1) }) };
     if (kind === 'project') this.db.prepare('INSERT INTO projects (id,data) VALUES (?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data').run(entity.id, JSON.stringify(entity));
     else this.db.prepare('INSERT INTO sections (id,project_id,data) VALUES (?,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data').run(entity.id, projectId, JSON.stringify(entity));
     return entity;
+  }
+  saveProjectView(id, body) {
+    const project = this.projects().find(p => p.id === id);
+    if (!project) throw new AppError(404, 'Проект не найден');
+    if (project.revision !== body.revision) throw new AppError(409, 'Проект изменён в другом окне. Обновите список.');
+    const next = { ...project, view: projectView(body.view), revision: project.revision + 1 };
+    this.db.prepare('UPDATE projects SET data=? WHERE id=?').run(JSON.stringify(next), id);
+    return next;
   }
   deleteEntity(kind, id, revision) {
     const table = kind === 'project' ? 'projects' : 'sections';

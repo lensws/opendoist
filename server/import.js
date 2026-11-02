@@ -1,6 +1,6 @@
 import { DateTime } from 'luxon';
 import rrule from 'rrule';
-import { entityFields } from './projects.js';
+import { entityFields, projectView } from './projects.js';
 import { AppError } from './store.js';
 const { RRule } = rrule;
 export const IMPORT_LIMIT = 10 * 1024 * 1024;
@@ -76,7 +76,7 @@ export function validateImport(document) {
     if (!Array.isArray(items) || items.length > 10000) fail('некорректный список проектов или разделов');
     const result = items.map(e => {
       if (!obj(e) || !uuid(e.id) || !Number.isSafeInteger(e.revision) || e.revision < 1 || (section && !uuid(e.projectId))) fail('некорректный проект или раздел');
-      return { id: e.id.toLowerCase(), ...entityFields(e), revision: e.revision, ...(section ? { projectId: e.projectId.toLowerCase() } : {}) };
+      return { id: e.id.toLowerCase(), ...entityFields(e), revision: e.revision, ...(section ? { projectId: e.projectId.toLowerCase() } : { view: projectView(e.view) }) };
     });
     if (new Set(result.map(e => e.id)).size !== result.length) fail('повторяются ID проектов или разделов');
     return result;

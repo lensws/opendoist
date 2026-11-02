@@ -174,3 +174,24 @@ input[type=checkbox], input[type=radio] { accent-color: var(--accent); }
 @media(max-width:700px){.task-input-wrap{flex-basis:80%}.composer .task-input-wrap input,.task-highlight{font-size:12px}}
 
 #add-form{overflow:visible}
+/* Project layouts share task actions and theme variables with the list. */
+.content.wide-view{max-width:1600px;padding-left:30px;padding-right:30px}
+.project-view-controls{display:flex;align-items:center;justify-content:flex-end;gap:10px;margin-bottom:20px;flex-wrap:wrap}
+.project-view-controls label:not(.sr-only){margin:0;font-size:12px}.project-view-controls select,.calendar-toolbar input,.board-move{border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--text);padding:8px;font-size:12px}
+.project-board{display:flex;gap:18px;overflow-x:auto;align-items:flex-start;padding:4px 2px 18px;min-height:240px}
+.board-column{flex:0 0 285px;min-height:180px;border:1px solid var(--line);border-radius:10px;background:var(--surface-soft);padding:12px}
+.board-heading{font-size:14px;line-height:1.5;margin:0 0 14px;overflow-wrap:anywhere}.board-card.task{display:grid;grid-template-columns:22px minmax(0,1fr);gap:10px;background:var(--surface);border:1px solid var(--line);border-radius:8px;margin:0 0 10px;padding:12px;cursor:grab}
+.board-card .task-actions{grid-column:2;justify-content:flex-end;flex-wrap:wrap}.board-card .task-title{overflow-wrap:anywhere}.board-card .task-meta{display:flex;flex-wrap:wrap;gap:5px}.board-move{grid-column:1/-1;width:100%}.board-column .add-inline{font-size:12px}
+.dragging{opacity:.45}.drop-target{outline:2px solid var(--accent-ink);outline-offset:-2px;background:var(--accent-soft)!important}
+.calendar-toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:0 0 12px}.calendar-toolbar h2{font-size:18px;margin:0;min-width:180px;text-transform:capitalize}.calendar-toolbar .secondary{padding:8px 12px}
+.calendar-scroll{overflow:auto;max-height:650px;border:1px solid var(--line);border-radius:10px;position:relative}
+.calendar-grid{display:grid;background:var(--surface);gap:1px}.month-grid{grid-template-columns:repeat(7,minmax(0,1fr));min-width:770px}.time-grid{grid-template-columns:70px repeat(7,minmax(0,1fr));min-width:900px}.time-grid.three-days{grid-template-columns:70px repeat(3,minmax(0,1fr));min-width:520px}
+.calendar-day-heading{position:sticky;top:0;z-index:2;background:var(--surface-soft);padding:12px 8px;border-bottom:1px solid var(--line);font-size:12px;font-weight:600;text-align:center}
+.calendar-cell{min-width:0;min-height:90px;padding:5px;border-right:1px solid var(--line);border-bottom:1px solid var(--line);background:var(--surface)}.month-grid .calendar-cell{min-height:125px}.calendar-cell.calendar-today{background:color-mix(in srgb,var(--accent-soft) 50%,var(--surface))}.other-month{background:var(--surface-soft)}
+.calendar-add{border:0;background:transparent;color:var(--muted);padding:3px 7px;border-radius:5px;font-size:12px;display:block;margin:0 0 4px auto}.calendar-add:hover,.calendar-add:focus-visible{background:var(--accent-soft);color:var(--accent-ink)}.calendar-today>.calendar-add{background:var(--accent-ink);color:var(--surface)}
+.calendar-card{display:flex;align-items:flex-start;gap:3px;min-width:0;background:var(--accent-soft);border:1px solid var(--line);border-left:3px solid var(--accent-ink);border-radius:5px;margin-bottom:5px;padding:4px;cursor:grab}
+.calendar-task-title{flex:1;min-width:0;border:0;background:transparent;color:var(--text);text-align:left;font-size:11px;line-height:1.45;padding:2px;overflow-wrap:anywhere}.calendar-complete{border:0;background:transparent;color:var(--accent-ink);padding:0 2px;font-size:18px;line-height:22px}.calendar-hour{border-bottom:1px solid var(--line);font-size:11px;color:var(--muted);padding:9px 5px;text-align:center;background:var(--surface-soft)}
+.calendar-unscheduled{margin-top:18px;padding:14px;border:1px dashed var(--line);border-radius:8px;min-height:80px}.calendar-unscheduled .calendar-card{max-width:360px}.calendar-unscheduled .calendar-task-title{font-size:13px}
+@media(max-width:700px){.content.wide-view{padding:24px 16px}.project-view-controls{justify-content:flex-start}.board-column{flex-basis:270px}.calendar-toolbar{gap:6px}.calendar-toolbar h2{font-size:15px;min-width:140px}.calendar-scroll{max-height:65vh}}
+
+.board-card .task-main{user-select:none}.calendar-card .calendar-task-title{user-select:none}.time-grid .calendar-cell{min-height:72px}

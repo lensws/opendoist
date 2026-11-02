@@ -6,3 +6,8 @@ export function entityFields(body) {
   if (typeof emoji !== 'string' || emoji.length > 32 || (body.iconType === 'emoji' && ([...new Intl.Segmenter().segment(emoji)].length !== 1 || !/\p{Extended_Pictographic}|\p{Regional_Indicator}|\u20e3/u.test(emoji)))) throw new AppError(400, 'Введите один эмодзи');
   return { name: body.name.trim(), iconType: body.iconType, color: body.color.toLowerCase(), emoji: body.iconType === 'emoji' ? emoji : '' };
 }
+
+export function projectView(value = {}) {
+  if (!value || typeof value !== 'object' || Array.isArray(value) || !['list', 'board', 'calendar'].includes(value.layout ?? 'list') || !['month', 'week', 'three-days'].includes(value.calendar ?? 'month')) throw new AppError(400, 'Выберите список, доску или календарь');
+  return { layout: value.layout ?? 'list', calendar: value.calendar ?? 'month' };
+}

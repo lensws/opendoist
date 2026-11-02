@@ -1,3 +1,4 @@
+import { rescheduleTask } from './calendar.js';
 import { createServer } from 'node:http';
 import { readFileSync } from 'node:fs';
 import { randomBytes, scryptSync, timingSafeEqual, createHmac } from 'node:crypto';
@@ -7,7 +8,7 @@ import { Store, AppError } from './store.js';
 import { TelegramInbox } from './telegram.js';
 import { NotificationWorker, publicConfig, validateConfig, makeReminder } from './notifications.js';
 
-const assets = new Map(['index.html', 'app.js', 'style.css', 'icon.svg', 'appearance.js', 'notifications.js', 'transfer.js', 'projects.js', 'task-input.js', 'emoji-picker.js', 'emoji-search.js', 'emojis.json', 'emojis-LICENSE.txt'].map(name => [name, readFileSync(new URL(`../public/${name}`, import.meta.url))]));
+const assets = new Map(['index.html', 'app.js', 'style.css', 'icon.svg', 'appearance.js', 'notifications.js', 'transfer.js', 'projects.js', 'project-views.js', 'calendar-model.js', 'task-input.js', 'emoji-picker.js', 'emoji-search.js', 'emojis.json', 'emojis-LICENSE.txt'].map(name => [name, readFileSync(new URL(`../public/${name}`, import.meta.url))]));
 const mime = { json: 'application/json; charset=utf-8', txt: 'text/plain; charset=utf-8', html: 'text/html; charset=utf-8', js: 'text/javascript; charset=utf-8', css: 'text/css; charset=utf-8', svg: 'image/svg+xml' };
 const SESSION_AGE = 7 * 86400 * 1000;
 async function readJSON(req, limit = 16384) {
@@ -99,6 +100,8 @@ export function createApp({ password, database = './data/opendoist.sqlite', publ
       }
       if (path === '/api/projects' && method === 'GET') return send(200, { projects: store.projects(), sections: store.sections() });
       if (path === '/api/projects/order' && method === 'PATCH') { const body = await readJSON(req); return send(200, { projects: store.reorderProjects(body.ids, body.previousIds) }); }
+      const projectViewMatch = /^\/api\/projects\/([a-f0-9-]+)\/view$/.exec(path);
+      if (projectViewMatch && method === 'PATCH') return send(200, { project: store.saveProjectView(projectViewMatch[1], await readJSON(req)) });
       const entityMatch = /^\/api\/(projects|sections)(?:\/([a-f0-9-]+))?$/.exec(path);
       if (entityMatch && ['POST', 'PATCH', 'DELETE'].includes(method)) {
         const [, collection, id] = entityMatch, body = await readJSON(req), kind = collection === 'projects' ? 'project' : 'section';
@@ -124,6 +127,11 @@ export function createApp({ password, database = './data/opendoist.sqlite', publ
       if (path === '/api/tasks' && method === 'POST') {
         const body = await readJSON(req), { parsed } = parse(body);
         return send(201, { task: store.create({ ...saveable(parsed), ...store.placement(body.projectId ?? null, body.sectionId ?? null) }) });
+      }
+      const rescheduleMatch = /^\/api\/tasks\/([a-f0-9-]+)\/reschedule$/.exec(path);
+      if (rescheduleMatch && method === 'POST') {
+        const body = await readJSON(req);
+        return send(200, { task: store.mutate(rescheduleMatch[1], body.revision, task => rescheduleTask(task, body)) });
       }
       const reminderMatch = /^\/api\/tasks\/([a-f0-9-]+)\/reminders(?:\/([a-f0-9-]+))?$/.exec(path);
       if (reminderMatch && (method === 'POST' || method === 'DELETE')) {

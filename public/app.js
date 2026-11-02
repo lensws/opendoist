@@ -1,3 +1,4 @@
+import { initProjectViews } from './project-views.js';
 import { initTaskInput } from './task-input.js';
 import { initProjects } from './projects.js';
 import { initTransfer } from './transfer.js';
@@ -18,6 +19,7 @@ async function api(path, { method = 'GET', body } = {}) {
 }
 const projectUI = initProjects({ api, getData: () => ({ projects, sections, tasks }), reload: load, selectView: next => { view = next; render(); }, notify });
 const taskInput = initTaskInput({ getProjects: () => projects, chooseProject: id => projectUI.fillPlacement('add', id, '') });
+const projectViews = initProjectViews({ api, reload:load, redraw:render, today:() => today(), getTimezone:() => settings.timezone, makeTaskRow, addTask:addInView, editTask:openEdit, completeTask, notify });
 initTransfer({ api, reload: async () => { ({ projects, sections } = await api('/projects')); tasks = (await api('/tasks')).tasks; if (view === 'history') history = (await api('/history')).history; render(); }, notify });
 const { openReminders } = initNotifications({ api, reload: load, getSettings: () => settings, notify });
 function node(tag, className, text) { const el = document.createElement(tag); if (className) el.className = className; if (text !== undefined) el.textContent = text; return el; }
@@ -66,6 +68,8 @@ function render() {
   if (!titles[view] && !entity) view = 'inbox';
   $('#view-title').textContent = entity?.name || titles[view];
   projectUI.draw(view);
+  const layout = projectViews.configure(view.startsWith('project:') ? entity : null);
+  $('#task-list').hidden = layout !== 'list';
   document.querySelectorAll('[data-view]').forEach(el => { const active = el.dataset.view === view; el.classList.toggle('active', active); if (active) el.setAttribute('aria-current', 'page'); else el.removeAttribute('aria-current'); });
   const active = tasks.filter(t => !t.completedAt);
   const filters = { inbox: active.filter(t => !t.projectId), all: active, today: active.filter(t => t.due && t.due.date <= today(t.due.timezone)), upcoming: active.filter(t => t.due && t.due.date > today(t.due.timezone)), completed: tasks.filter(t => t.completedAt) };
@@ -82,17 +86,23 @@ function render() {
   }
   const selected = (entity ? active.filter(t => view.startsWith('project:') ? t.projectId === entity.id : t.sectionId === entity.id) : filters[view]).filter(t => t.title.toLocaleLowerCase().includes(query)).sort((a, b) => (view.startsWith('project:') ? sections.findIndex(s => s.id === a.sectionId) - sections.findIndex(s => s.id === b.sectionId) : 0) || (a.due?.date || '9999').localeCompare(b.due?.date || '9999') || (a.due?.time || '').localeCompare(b.due?.time || '') || b.createdAt.localeCompare(a.createdAt));
   $('#task-summary').textContent = `Задач: ${selected.length}`; $('#empty').hidden = !!selected.length;
+  if (layout !== 'list') { $('#empty').hidden = true; projectViews.draw(selected, sections.filter(s => s.projectId === entity.id)); return; }
   let lastGroup;
   for (const task of selected) {
     const group = view.startsWith('project:') ? sections.find(s => s.id === task.sectionId)?.name || 'Без раздела' : task.completedAt ? 'Готово' : overdue(task) ? 'Просрочено' : task.due ? dateLabel({ ...task.due, time: null }) : 'Без срока';
     if (group !== lastGroup) { list.append(node('h2', 'group-heading', group)); lastGroup = group; }
-    const row = node('article', `task${task.completedAt ? ' done' : ''}`);
-    const check = node('button', 'task-check', task.completedAt ? '✓' : ''); check.type = 'button'; check.title = task.completedAt ? 'Отменить выполнение' : 'Выполнить задачу'; check.setAttribute('aria-label', `${check.title}: ${task.title}`);
-    check.addEventListener('click', async () => {
+    list.append(makeTaskRow(task));
+  }
+}
+async function completeTask(task, check) {
       check.disabled = true;
       try { const result = await api(`/tasks/${task.id}/${task.completedAt ? 'undo' : 'complete'}`, { method: 'POST', body: { revision: task.revision } }); await load(); notify(task.completedAt ? 'Задача возвращена' : result.task.completedAt ? 'Готово. Ещё один шаг!' : `Следующий срок: ${dateLabel(result.task.due)}`, task.completedAt ? null : async () => { await api(`/tasks/${task.id}/undo`, { method: 'POST', body: { revision: result.task.revision } }); await load(); }); }
       catch (e) { $('#page-error').textContent = e.message; check.disabled = false; }
-    });
+}
+function makeTaskRow(task) {
+    const row = node('article', `task${task.completedAt ? ' done' : ''}`);
+    const check = node('button', 'task-check', task.completedAt ? '✓' : ''); check.type = 'button'; check.title = task.completedAt ? 'Отменить выполнение' : 'Выполнить задачу'; check.setAttribute('aria-label', `${check.title}: ${task.title}`);
+    check.addEventListener('click', () => completeTask(task, check));
     const content = node('div', 'task-main'); content.append(node('div', 'task-title', task.title), meta(task));
     const actions = node('div', 'task-actions');
     if (!task.completedAt) {
@@ -103,9 +113,9 @@ function render() {
       if (!confirm(`Удалить «${task.title}» и историю её выполнений?`)) return;
       try { await api(`/tasks/${task.id}`, { method: 'DELETE', body: { revision: task.revision } }); await load(); notify('Задача удалена'); } catch (e) { $('#page-error').textContent = e.message; }
     }, 'delete'));
-    row.append(check, content, actions); list.append(row);
-  }
+    row.append(check, content, actions); return row;
 }
+
 function previewText(result) {
   const t = result.parsed;
   if (t.status === 'needs_review') return 'Не удалось распознать срок. Попробуйте уточнить формулировку.';
@@ -149,6 +159,11 @@ function syncComposer() {
   $('#add-open').setAttribute('aria-expanded', String(composerOpen && !unavailable));
 }
 function focusAdd() { if (['completed', 'history'].includes(view)) { view = 'all'; render(); } composerOpen = true; syncComposer(); $('#task-input').focus(); }
+function addInView({ projectId, sectionId = null, date = null, time = null }) {
+  if ($('#task-input').value.trim()) { focusAdd(); notify('В форме есть черновик. Добавьте его или очистите текст.'); return; }
+  projectUI.fillPlacement('add', projectId, sectionId); focusAdd();
+  if (date) { $('#task-input').value = ` ${date}${time ? ` ${time}` : ''}`; $('#task-input').setSelectionRange(0, 0); $('#task-input').dispatchEvent(new Event('input', { bubbles:true })); }
+}
 function closeComposer() { taskInput.hide(); composerOpen = false; syncComposer(); $('#add-open').focus(); }
 $('#add-open').addEventListener('click', focusAdd);
 $('#add-cancel').addEventListener('click', closeComposer);

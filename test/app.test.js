@@ -262,3 +262,32 @@ test('project ordering persists, rejects stale lists and survives edits and impo
   await target.request('/api/import', exported);
   assert.deepEqual((await target.request('/api/projects')).data.projects.map(p => p.id), [b.id,a.id,c.id]);
 });
+
+test('project layouts persist with revision checks, edits and JSON transfer', async t => {
+  const dir = mkdtempSync(join(tmpdir(), 'opendoist-layout-')); t.after(() => rmSync(dir,{recursive:true,force:true}));
+  const database = join(dir, 'tasks.sqlite'), app = await start(database); await app.login();
+  const fields = { name:'Layout', iconType:'color', color:'#334455' };
+  let project = (await app.request('/api/projects',fields)).data.entity;
+  const endpoint = `/api/projects/${project.id}/view`;
+  assert.equal((await app.request(endpoint, {revision:project.revision,view:{layout:'bad'}}, 'PATCH')).response.status,400);
+  project = (await app.request(endpoint, {revision:project.revision,view:{layout:'calendar',calendar:'week'}}, 'PATCH')).data.project;
+  assert.equal((await app.request(endpoint, {revision:1,view:{layout:'list'}}, 'PATCH')).response.status,409);
+  project = (await app.request(`/api/projects/${project.id}`, {...fields,name:'Renamed',revision:project.revision}, 'PATCH')).data.entity;
+  assert.deepEqual(project.view, {layout:'calendar',calendar:'week'});
+  const exported = (await app.request('/api/export')).data; await app.close();
+  const reopened = await start(database); t.after(() => reopened.close()); await reopened.login();
+  assert.deepEqual((await reopened.request('/api/projects')).data.projects[0].view,project.view);
+  const target = await start(); t.after(() => target.close()); await target.login(); await target.request('/api/import',exported);
+  assert.deepEqual((await target.request('/api/projects')).data.projects[0].view,project.view);
+});
+test('calendar reschedule endpoint rejects unauthenticated and stale changes', async t => {
+  const app = await start(); t.after(() => app.close());
+  assert.equal((await app.request('/api/tasks/123/reschedule',{date:'2026-11-02',revision:1})).response.status,401);
+  await app.login(); let task = (await app.request('/api/tasks',{source:'Встреча завтра в 10'})).data.task;
+  const url = `/api/tasks/${task.id}/reschedule`;
+  assert.equal((await app.request(url,{revision:task.revision,date:'not-date'})).response.status,400);
+  const moved = await app.request(url,{revision:task.revision,date:'2027-01-05',time:'12:30',timezone:'Europe/Moscow'});
+  assert.equal(moved.response.status,200); assert.equal(moved.data.task.due.date,'2027-01-05'); assert.equal(moved.data.task.due.time,'12:30');
+  assert.equal((await app.request(url,{revision:task.revision,date:'2027-01-06'})).response.status,409);
+  assert.equal((await app.request(url,{revision:moved.data.task.revision,date:null})).data.task.due,null);
+});
