@@ -10,7 +10,7 @@ on:
 permissions:
   contents: read
 
-# Cancel obsolete PR approvals, but never interrupt an active SSH deployment.
+# Cancel obsolete PR test runs, but never interrupt an active SSH deployment.
 concurrency:
   group: opendoist-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
