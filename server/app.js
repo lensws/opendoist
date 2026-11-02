@@ -41,14 +41,14 @@ function saveable(parsed) {
   if (!parsed.title.trim()) throw new AppError(422, 'Добавьте название задачи перед датой');
   return parsed;
 }
-export function createApp({ password, database = './data/opendoist.sqlite', publicUrl, secureCookie = false, backupUpload, notificationSender } = {}) {
+export function createApp({ password, database = './data/opendoist.sqlite', publicUrl, secureCookie = false, backupUpload, backupTester, notificationSender } = {}) {
   if (typeof password !== 'string' || password.length < 12 || password === 'change-this-before-use') throw new Error('Set OPENDOIST_PASSWORD to a unique password of at least 12 characters');
   const allowedOrigin = publicUrl ? new URL(publicUrl).origin : null;
   if (allowedOrigin?.startsWith('https:')) secureCookie = true;
   const store = new Store(database);
   const notifications = new NotificationWorker(store, { publicUrl: allowedOrigin || '', ...(notificationSender ? { send: notificationSender } : {}) });
   const telegram = new TelegramInbox(store);
-  const backups = new BackupWorker(store, { database, ...(backupUpload ? { upload:backupUpload } : {}) });
+  const backups = new BackupWorker(store, { database, ...(backupTester ? { testDestination:backupTester } : {}), ...(backupUpload ? { upload:backupUpload } : {}) });
   let lastTest = 0;
   const salt = randomBytes(32), expected = scryptSync(password, salt, 32);
   const sessionHash = token => createHmac('sha256', password).update(token).digest('hex');
@@ -94,6 +94,7 @@ export function createApp({ password, database = './data/opendoist.sqlite', publ
       }
       if (path === '/api/backups' && method === 'GET') return send(200, { config:backups.status() });
       if (path === '/api/backups' && method === 'PATCH') return send(200, { config:backups.save(await readJSON(req)) });
+      if (path === '/api/backups/test' && method === 'POST') return send(200, await backups.test(await readJSON(req)));
       if (path === '/api/backups/run' && method === 'POST') { backups.run(); return send(202, { config:backups.status() }); }
       const fileMatch = /^\/api\/tasks\/([a-f0-9-]+)\/attachments(?:\/([a-f0-9-]+))?$/.exec(path);
       if (fileMatch) {

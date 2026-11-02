@@ -1,9 +1,9 @@
 import { backup } from 'node:sqlite';
-import { mkdir, mkdtemp, chmod, rename, rm, stat } from 'node:fs/promises';
+import { mkdir, mkdtemp, chmod, rename, rm, stat, writeFile, readFile } from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
 import { resolve, join, isAbsolute, dirname } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { AppError } from './store.js';
 const intervals = { hourly:3600000, daily:86400000, weekly:604800000 };
 export function publicBackup(config, running = false) {
@@ -23,17 +23,63 @@ export function validateBackup(body, previous, now = Date.now()) {
   next.nextRun = next.enabled ? (previous.enabled && previous.frequency === next.frequency ? previous.nextRun || now + intervals[next.frequency] : now + intervals[next.frequency]) : null;
   return next;
 }
+function s3Client(config) {
+  return new S3Client({ region:config.region, ...(config.endpoint ? { endpoint:config.endpoint } : {}), forcePathStyle:config.forcePathStyle, credentials:{ accessKeyId:config.accessKeyId, secretAccessKey:config.secretAccessKey }, maxAttempts:2 });
+}
 export async function uploadS3(config, file, key) {
-  const client = new S3Client({ region:config.region, ...(config.endpoint ? { endpoint:config.endpoint } : {}), forcePathStyle:config.forcePathStyle, credentials:{ accessKeyId:config.accessKeyId, secretAccessKey:config.secretAccessKey }, maxAttempts:2 });
+  const client = s3Client(config);
   const body = createReadStream(file);
   try { await client.send(new PutObjectCommand({ Bucket:config.bucket, Key:key, Body:body, ContentLength:(await stat(file)).size, ContentType:'application/vnd.sqlite3' }), { abortSignal:AbortSignal.timeout(120000) }); }
   finally { body.destroy(); client.destroy(); }
 }
+// Only random test data is sent; no task or backup contents leave the server.
+export async function testBackupDestination(config, createClient = s3Client) {
+  const content = `OpenDoist connection check ${randomUUID()}`;
+  let stage = 'write', cleanupFailed = false, failure = null;
+  if (config.target === 'folder') {
+    let temporary;
+    try {
+      await mkdir(config.folder, { recursive:true, mode:0o700 });
+      temporary = await mkdtemp(join(config.folder, '.opendoist-check-'));
+      const draft = join(temporary, 'check.tmp'), file = join(temporary, 'check.txt');
+      await writeFile(draft, content, { mode:0o600, flag:'wx' });
+      await rename(draft, file); stage = 'read';
+      if (await readFile(file, 'utf8') !== content) throw Error('Mismatch');
+    } catch { failure = stage; }
+    finally { if (temporary) try { await rm(temporary, { recursive:true, force:true }); } catch { cleanupFailed = true; } }
+  } else {
+    const client = createClient(config);
+    const key = `${config.prefix.replace(/\/$/,'')}${config.prefix ? '/' : ''}opendoist-check-${randomUUID()}.txt`;
+    const object = { Bucket:config.bucket, Key:key }, signal = AbortSignal.timeout(20000);
+    let uploaded = false;
+    try {
+      await client.send(new PutObjectCommand({ ...object, Body:content, ContentType:'text/plain', IfNoneMatch:'*' }), { abortSignal:signal });
+      uploaded = true; stage = 'read';
+      const response = await client.send(new GetObjectCommand(object), { abortSignal:signal });
+      if (await response.Body.transformToString() !== content) throw Error('Mismatch');
+    } catch { failure = stage; }
+    finally {
+      if (uploaded) try { await client.send(new DeleteObjectCommand(object), { abortSignal:AbortSignal.timeout(10000) }); } catch { cleanupFailed = true; }
+      client.destroy();
+    }
+  }
+  const destination = config.target === 's3' ? 'S3' : 'папку';
+  if (failure) return { ok:false, message:failure === 'write' ? `Не удалось записать тестовые данные в ${destination}. Проверьте ${config.target === 's3' ? 'endpoint, регион, bucket, ключи, право s3:PutObject и сеть' : 'путь, права на запись и свободное место'}.` : `Запись прошла, но чтение тестовых данных не подтверждено. Проверьте ${config.target === 's3' ? 'право s3:GetObject и настройки шифрования bucket' : 'права на чтение папки'}.`, warning:cleanupFailed ? 'Не удалось удалить тестовые данные. Проверьте право на удаление.' : failure === 'write' && config.target === 's3' ? 'Если соединение прервалось после записи, в bucket мог остаться объект opendoist-check-*.txt.' : null };
+  return { ok:true, message:'Подключение проверено: тестовые данные записаны и прочитаны без изменений.', warning:cleanupFailed ? `Тестовые данные не удалены. ${config.target === 's3' ? 'Добавьте право s3:DeleteObject или удалите объект opendoist-check-*.txt вручную.' : 'Проверьте права на удаление в папке.'}` : null };
+}
 export class BackupWorker {
-  constructor(store, { database, upload = uploadS3 } = {}) { this.store = store; this.directory = dirname(resolve(database || './data/opendoist.sqlite')); this.upload = upload; this.pending = null; }
+  constructor(store, { database, upload = uploadS3, testDestination = testBackupDestination } = {}) { this.store = store; this.directory = dirname(resolve(database || './data/opendoist.sqlite')); this.upload = upload; this.pending = null; this.testing = null; this.testDestination = testDestination; }
   config() { return { enabled:false, target:'folder', frequency:'daily', folder:join(this.directory, 'backups'), endpoint:'', region:'us-east-1', bucket:'', prefix:'opendoist/', accessKeyId:'', secretAccessKey:'', forcePathStyle:true, nextRun:null, lastSuccess:null, lastAttempt:null, lastError:null, ...this.store.backupConfig() }; }
   status() { return publicBackup(this.config(), !!this.pending); }
   save(body) { if (this.pending) throw new AppError(409, 'Дождитесь завершения копирования'); const config = validateBackup(body, this.config()); this.store.saveBackupConfig(config); return this.status(); }
+  async test(body) {
+    if (this.testing) throw new AppError(409, 'Проверка уже выполняется');
+    const config = validateBackup(body, this.config());
+    this.testing = Promise.resolve().then(() => this.testDestination(config));
+    try { return await this.testing; }
+    catch { throw new AppError(502, 'Не удалось проверить хранилище. Проверьте параметры и доступность сервера.'); }
+    finally { this.testing = null; }
+  }
   run() {
     if (this.pending) throw new AppError(409, 'Копирование уже выполняется');
     const config = validateBackup({}, this.config()), now = Date.now();
@@ -61,5 +107,5 @@ export class BackupWorker {
   }
   tick(now = Date.now()) { const config = this.config(); if (config.enabled && config.nextRun <= now && !this.pending) return this.run(); }
   start() { this.timer = setInterval(() => { try { this.tick(); } catch { /* Status remains available in settings. */ } }, 30000); this.timer.unref(); this.tick(); }
-  async stop() { clearInterval(this.timer); await this.pending; }
+  async stop() { clearInterval(this.timer); await Promise.allSettled([this.pending, this.testing]); }
 }

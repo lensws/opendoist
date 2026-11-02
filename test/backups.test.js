@@ -41,3 +41,33 @@ test('backup configuration rejects unsafe or invalid values',async t=>{
  for(const body of [{frequency:'minutely'},{folder:'relative'},{folder:'/a/../b'},{endpoint:'http://storage.example.com'},{endpoint:'https://user:pass@storage.example.com'},{target:'s3',bucket:'bad bucket'},{enabled:'yes'},{unknown:true}]) assert.throws(()=>validateBackup(body,config),e=>e.status===400);
  assert.equal(publicBackup({...config,secretAccessKey:'hidden'}).secretAccessKey,undefined);
 });
+
+test('destination test uses unsaved folder, cleans up and preserves config',async t=>{
+ const {dir,store,worker}=await setup(t);worker.save({enabled:true,frequency:'weekly'});const before=store.backupConfig();
+ const folder=join(dir,'draft');const result=await worker.test({folder});assert.equal(result.ok,true);assert.equal(result.warning,null);assert.deepEqual(await readdir(folder),[]);assert.deepEqual(store.backupConfig(),before);
+ assert.equal((await worker.test({folder:join(dir,'db.sqlite','invalid')})).ok,false);
+});
+test('S3 check verifies data and cleanup without exposing provider errors',async()=>{
+ const {testBackupDestination}=await import('../server/backups.js');
+ for(const failAt of [null,'PutObjectCommand','GetObjectCommand','DeleteObjectCommand','mismatch']){
+ let content,destroyed=false;const commands=[];
+ const result=await testBackupDestination({target:'s3',prefix:'custom/',bucket:'test'},()=>({send:async command=>{
+ commands.push(command);const type=command.constructor.name;if(type===failAt)throw Error('private provider details');
+ if(type==='PutObjectCommand')content=command.input.Body;
+ if(type==='GetObjectCommand')return {Body:{transformToString:async()=>failAt==='mismatch' ? 'wrong' : content}};
+ return {};
+ },destroy:()=>{destroyed=true;}}));
+ assert.equal(destroyed,true);assert.doesNotMatch(JSON.stringify(result),/private provider details/);assert.equal(result.ok,failAt===null||failAt==='DeleteObjectCommand');
+ assert.equal(new Set(commands.map(c=>c.input.Key)).size,1);assert.match(commands[0].input.Key,/^custom\/opendoist-check-.*\.txt$/);assert.equal(commands[0].input.IfNoneMatch,'*');
+ if(failAt!=='PutObjectCommand')assert.ok(commands.some(c=>c.constructor.name==='DeleteObjectCommand'));
+ if(failAt==='DeleteObjectCommand')assert.match(result.warning,/DeleteObject/);
+ if(failAt===null){assert.equal(result.warning,null);assert.match(content,/^OpenDoist connection check /);}
+ }
+});
+test('concurrent checks rejected; blank draft keys use saved credentials without saving draft',async t=>{
+ const {store,dir}=await setup(t);let release,tested;
+ const worker=new BackupWorker(store,{database:join(dir,'db.sqlite'),testDestination:async config=>{tested=config;await new Promise(r=>release=r);return {ok:true};}});
+ worker.save({target:'s3',bucket:'saved-bucket',accessKeyId:'test-id',secretAccessKey:'test-only-key'});
+ const pending=worker.test({bucket:'draft-bucket',accessKeyId:'',secretAccessKey:''});await Promise.resolve();await assert.rejects(worker.test({}),e=>e.status===409);release();
+ assert.equal((await pending).ok,true);assert.equal(tested.bucket,'draft-bucket');assert.equal(tested.secretAccessKey,'test-only-key');assert.equal(worker.config().bucket,'saved-bucket');
+});

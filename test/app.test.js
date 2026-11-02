@@ -319,3 +319,12 @@ test('backup API hides credentials and task move API rejects stale state',async 
  const moved=await app.request(`/api/tasks/${b.id}/move`,{previous,parentId:a.id});assert.equal(moved.response.status,200);assert.equal(moved.data.task.parentId,a.id);
  assert.equal((await app.request(`/api/tasks/${a.id}/move`,{previous,parentId:null})).response.status,409);
 });
+
+test('backup connection check authenticates, enforces origin and does not save draft',async t=>{
+ let tested;const app=await start(':memory:',{backupTester:async config=>{tested=config;return {ok:true,message:'Verified',warning:null};}});t.after(()=>app.close());
+ assert.equal((await app.request('/api/backups/test',{})).response.status,401);await app.login();
+ assert.equal((await app.request('/api/backups/test',{},'POST',{Origin:'https://evil.example'})).response.status,403);
+ const before=(await app.request('/api/backups')).data.config;
+ const result=await app.request('/api/backups/test',{folder:'/tmp/test-draft'});assert.equal(result.response.status,200);assert.equal(result.data.ok,true);assert.equal(tested.folder,'/tmp/test-draft');
+ assert.deepEqual((await app.request('/api/backups')).data.config,before);assert.equal((await app.request('/api/backups/test',{folder:'relative'})).response.status,400);
+});

@@ -142,6 +142,9 @@
 <label class="checkbox-label"><input id="backup-forcePathStyle" type="checkbox" checked> Path-style адресация (для S3-совместимых сервисов)</label>
 </div>
 <p class="muted small">Сначала сохраните параметры. Копии не удаляются автоматически: для S3 можно настроить срок хранения в bucket. Расписание работает, пока запущен сервер.</p>
+<button id="backup-test" type="button" class="secondary">Проверить подключение</button>
+<p class="muted small">Проверяются текущие поля формы без сохранения: запись, чтение и удаление небольшого тестового файла. Задачи не отправляются. Пустые поля ключей используют сохранённые ключи.</p>
+<p id="backup-check-result" class="small" role="status" aria-live="polite"></p>
 <pre id="backup-status" class="small" role="status"></pre><p id="backup-error" class="error" role="alert"></p>
 <div class="dialog-actions"><button id="backup-run" type="button" class="secondary">Создать сейчас</button><button type="submit" class="primary">Сохранить</button></div>
 </form></dialog>
