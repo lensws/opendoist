@@ -10,10 +10,10 @@ on:
 permissions:
   contents: read
 
-# Never cancel an in-progress SSH deployment. The VPS additionally serializes builds.
+# Cancel obsolete PR approvals, but never interrupt an active SSH deployment.
 concurrency:
   group: opendoist-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   test:
