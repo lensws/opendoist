@@ -1,5 +1,7 @@
+import { initEmojiPicker } from './emoji-picker.js';
 export function initProjects({ api, getData, reload, selectView, notify }) {
   const $ = s => document.querySelector(s);
+  const emojiPicker = initEmojiPicker();
   let editing = null, kind = 'project', parent = null, lastView = null;
   const node = (tag, text, cls = '') => { const el = document.createElement(tag); el.textContent = text; el.className = cls; return el; };
   function icon(entity) { const el = node('span', entity.iconType === 'emoji' ? entity.emoji : '#', 'project-icon'); if (entity.iconType === 'color') el.style.color = entity.color; return el; }
@@ -8,9 +10,9 @@ export function initProjects({ api, getData, reload, selectView, notify }) {
     $('#entity-heading').textContent = `${entity ? 'Изменить' : 'Новый'} ${type === 'project' ? 'проект' : 'раздел'}`;
     $('#entity-name').value = entity?.name || ''; $('#entity-icon-type').value = entity?.iconType || 'color';
     $('#entity-color').value = entity?.color || '#c95736'; $('#entity-emoji').value = entity?.emoji || '📁';
-    $('#entity-delete').hidden = !entity; $('#entity-error').textContent = ''; switchIcon(); $('#entity-dialog').showModal();
+    emojiPicker.reset(); $('#entity-delete').hidden = !entity; $('#entity-error').textContent = ''; switchIcon(); $('#entity-dialog').showModal();
   }
-  function switchIcon() { const emoji = $('#entity-icon-type').value === 'emoji'; $('#entity-emoji-label').hidden = !emoji; $('#entity-color-label').hidden = emoji; }
+  function switchIcon() { const emoji = $('#entity-icon-type').value === 'emoji'; $('#entity-emoji-label').hidden = !emoji; $('#entity-color-label').hidden = emoji; if (emoji) emojiPicker.show(); }
   function sectionsFor(projectSelect, sectionSelect, selected = sectionSelect.value) {
     sectionSelect.replaceChildren(new Option('Без раздела', ''));
     for (const s of getData().sections.filter(s => s.projectId === projectSelect.value)) sectionSelect.add(new Option(`${s.emoji || '#'} ${s.name}`, s.id));

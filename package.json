@@ -8,7 +8,8 @@
     "test": "node --test",
     "demo": "node examples/demo.js",
     "start": "node --env-file-if-exists=.env server/start.js",
-    "dev": "node --env-file-if-exists=.env --watch server/start.js"
+    "dev": "node --env-file-if-exists=.env --watch server/start.js",
+    "emojis:build": "node scripts/build-emojis.js"
   },
   "engines": {
     "node": ">=24"
@@ -23,5 +24,8 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/lensws/opendoist.git"
+  },
+  "devDependencies": {
+    "emojibase-data": "18.0.0"
   }
 }
