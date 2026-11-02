@@ -3,8 +3,9 @@ import { readFileSync } from 'node:fs';
 import { randomBytes, scryptSync, timingSafeEqual, createHmac } from 'node:crypto';
 import { parseTask, occurrences } from '../src/index.js';
 import { Store, AppError } from './store.js';
+import { NotificationWorker, publicConfig, validateConfig, makeReminder } from './notifications.js';
 
-const assets = new Map(['index.html', 'app.js', 'style.css', 'icon.svg', 'appearance.js'].map(name => [name, readFileSync(new URL(`../public/${name}`, import.meta.url))]));
+const assets = new Map(['index.html', 'app.js', 'style.css', 'icon.svg', 'appearance.js', 'notifications.js'].map(name => [name, readFileSync(new URL(`../public/${name}`, import.meta.url))]));
 const mime = { html: 'text/html; charset=utf-8', js: 'text/javascript; charset=utf-8', css: 'text/css; charset=utf-8', svg: 'image/svg+xml' };
 const SESSION_AGE = 7 * 86400 * 1000;
 async function readJSON(req) {
@@ -29,11 +30,13 @@ function saveable(parsed) {
   if (!parsed.title.trim()) throw new AppError(422, 'Добавьте название задачи перед датой');
   return parsed;
 }
-export function createApp({ password, database = './data/opendoist.sqlite', publicUrl, secureCookie = false } = {}) {
+export function createApp({ password, database = './data/opendoist.sqlite', publicUrl, secureCookie = false, notificationSender } = {}) {
   if (typeof password !== 'string' || password.length < 12 || password === 'change-this-before-use') throw new Error('Set OPENDOIST_PASSWORD to a unique password of at least 12 characters');
   const allowedOrigin = publicUrl ? new URL(publicUrl).origin : null;
   if (allowedOrigin?.startsWith('https:')) secureCookie = true;
   const store = new Store(database);
+  const notifications = new NotificationWorker(store, { publicUrl: allowedOrigin || '', ...(notificationSender ? { send: notificationSender } : {}) });
+  let lastTest = 0;
   const salt = randomBytes(32), expected = scryptSync(password, salt, 32);
   const sessionHash = token => createHmac('sha256', password).update(token).digest('hex');
   let attempts = []; // Global limiter: works behind reverse proxies without trusting forwarded IPs.
@@ -76,6 +79,21 @@ export function createApp({ password, database = './data/opendoist.sqlite', publ
         store.db.prepare('DELETE FROM sessions WHERE hash=?').run(sessionHash(token));
         return send(200, { ok: true }, { 'Set-Cookie': cookie('', 0) });
       }
+      if (path === '/api/notifications' && method === 'GET') return send(200, { config: publicConfig(notifications.config()), deliveries: store.notificationStatus() });
+      if (path === '/api/notifications' && method === 'PATCH') {
+        const config = validateConfig(await readJSON(req), notifications.config());
+        store.saveNotificationConfig(config);
+        return send(200, { config: publicConfig(config) });
+      }
+      if (path === '/api/notifications/test' && method === 'POST') {
+        const { channel } = await readJSON(req), config = notifications.config();
+        if (!['email', 'telegram'].includes(channel) || !config[channel].enabled) throw new AppError(400, 'Сначала сохраните и включите канал');
+        if (Date.now() - lastTest < 10000) throw new AppError(429, 'Повторите проверку через 10 секунд');
+        lastTest = Date.now();
+        try { await notifications.send(channel, config, { subject: 'OpenDoist · Проверка уведомлений', text: 'Канал подключён. Здесь будут появляться напоминания и сводки дел.' }, `test:${randomBytes(16).toString('hex')}`); }
+        catch { throw new AppError(502, 'Не удалось отправить. Проверьте параметры канала и доступность сервиса.'); }
+        return send(200, { ok: true });
+      }
       if (path === '/api/settings' && method === 'GET') return send(200, { settings: store.settings() });
       if (path === '/api/settings' && method === 'PATCH') return send(200, { settings: store.saveSettings(await readJSON(req)) });
       if (path === '/api/tasks' && method === 'GET') return send(200, { tasks: store.list() });
@@ -89,6 +107,20 @@ export function createApp({ password, database = './data/opendoist.sqlite', publ
       if (path === '/api/tasks' && method === 'POST') {
         const { parsed } = parse(await readJSON(req));
         return send(201, { task: store.create(saveable(parsed)) });
+      }
+      const reminderMatch = /^\/api\/tasks\/([a-f0-9-]+)\/reminders(?:\/([a-f0-9-]+))?$/.exec(path);
+      if (reminderMatch && (method === 'POST' || method === 'DELETE')) {
+        const body = await readJSON(req);
+        if (!Number.isInteger(body.revision)) throw new AppError(400, 'Требуется версия задачи');
+        const [, id, reminderId] = reminderMatch;
+        if ((method === 'POST' && reminderId) || (method === 'DELETE' && !reminderId)) throw new AppError(405, 'Метод не поддерживается');
+        const task = store.mutate(id, body.revision, previous => {
+          const reminders = previous.reminders || [];
+          if (method === 'POST') return { ...previous, reminders: [...reminders, makeReminder(body, previous, notifications.config())] };
+          if (!reminders.some(r => r.id === reminderId)) throw new AppError(404, 'Напоминание не найдено');
+          return { ...previous, reminders: reminders.filter(r => r.id !== reminderId) };
+        });
+        return send(method === 'POST' ? 201 : 200, { task });
       }
       const match = /^\/api\/tasks\/([a-f0-9-]+)(?:\/(complete|undo))?$/.exec(path);
       if (!match) throw new AppError(404, 'Не найдено');
@@ -115,5 +147,5 @@ export function createApp({ password, database = './data/opendoist.sqlite', publ
   server.requestTimeout = 15000;
   server.headersTimeout = 10000;
   server.on('close', () => store.close());
-  return { server, store };
+  return { server, store, notifications };
 }

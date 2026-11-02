@@ -54,10 +54,55 @@
       <p class="muted small">Изменения видны сразу. Нажмите «Сохранить», чтобы оставить их.</p>
     </fieldset>
     <div class="settings-divider"></div>
+    <button type="button" id="notifications-open" class="secondary settings-link">🔔 Уведомления и сводка дня →</button>
     <label for="timezone">Часовой пояс новых задач</label><input id="timezone" list="timezones" required><datalist id="timezones"><option value="Europe/Moscow"><option value="Europe/Berlin"><option value="Asia/Dubai"><option value="Asia/Tbilisi"><option value="America/New_York"><option value="UTC"></datalist>
     <label for="language">Язык распознавания</label><select id="language"><option value="auto">Автоматически · RU / EN</option><option value="ru">Русский · день / месяц</option><option value="en">English · month / day</option></select>
     <p class="muted small">Сохраняются на сервере и доступны на всех устройствах. У существующих задач часовой пояс не меняется.</p><p id="settings-error" class="error" role="alert"></p>
     <div class="dialog-actions"><button type="button" class="secondary" data-close="settings-dialog">Отмена</button><button class="primary" type="submit">Сохранить</button></div>
+  </form>
+</dialog>
+<dialog id="reminders-dialog" aria-labelledby="reminders-title">
+  <div class="dialog-heading"><h2 id="reminders-title">Напомнить</h2><button type="button" data-close="reminders-dialog" class="icon-button" aria-label="Закрыть">×</button></div>
+  <p id="reminder-task-title" class="muted"></p>
+  <div id="reminder-list" aria-label="Напоминания задачи"></div>
+  <form id="reminder-form">
+    <label for="reminder-kind">Когда напомнить</label><select id="reminder-kind"><option value="before">До задачи</option><option value="absolute">Дата и время</option></select>
+    <div id="reminder-before"><div class="form-grid"><div><label for="reminder-amount">За сколько</label><input id="reminder-amount" type="number" min="0" max="525600" value="30" list="reminder-presets"><datalist id="reminder-presets"><option value="0"><option value="5"><option value="15"><option value="30"><option value="60"></datalist></div><div><label for="reminder-unit">Единица времени</label><select id="reminder-unit"><option value="1">минут</option><option value="60">часов</option><option value="1440">дней</option></select></div></div><p class="muted small">Нужен срок задачи с временем. 0 минут — в момент срока. У повторяющейся задачи напоминание повторится вместе с ней.</p></div>
+    <div id="reminder-absolute" hidden><label for="reminder-local">Дата и время напоминания</label><input id="reminder-local" type="datetime-local"><label for="reminder-zone">Часовой пояс напоминания</label><input id="reminder-zone" list="timezones"><p class="muted small">Однократное напоминание, независимо от срока задачи.</p></div>
+    <fieldset class="notification-channels"><legend>Куда прислать</legend><label class="checkbox-label"><input id="reminder-email" type="checkbox"> Email</label><label class="checkbox-label"><input id="reminder-telegram" type="checkbox"> Telegram</label></fieldset>
+    <p id="reminder-channel-note" class="muted small"></p><button type="button" id="reminder-connect" class="subtle">Настроить каналы →</button>
+    <p id="reminder-error" class="error" role="alert"></p><div class="dialog-actions"><button class="primary" type="submit">Добавить напоминание</button></div>
+  </form>
+</dialog>
+<dialog id="notifications-dialog" aria-labelledby="notifications-title">
+  <form id="notifications-form">
+    <div class="dialog-heading"><h2 id="notifications-title">Уведомления</h2><button type="button" data-close="notifications-dialog" class="icon-button" aria-label="Закрыть">×</button></div>
+    <p class="muted small">Напоминания и сводки приходят, даже когда приложение закрыто. Настройки общие для всех устройств.</p>
+    <details id="email-details" class="channel-section"><summary>Email <span id="email-state" class="muted small"></span></summary>
+      <label class="checkbox-label"><input id="email-enabled" type="checkbox"> Отправлять на email</label>
+      <label for="email-to">Email получателя</label><input id="email-to" type="email" autocomplete="email" placeholder="you@example.com">
+      <label for="email-from">Email отправителя</label><input id="email-from" type="email" placeholder="tasks@example.com">
+      <div class="form-grid"><div><label for="email-host">SMTP-сервер</label><input id="email-host" placeholder="smtp.example.com" autocomplete="off"></div><div><label for="email-port">Порт SMTP</label><input id="email-port" type="number" min="1" max="65535" value="587"></div></div>
+      <label class="checkbox-label"><input id="email-secure" type="checkbox"> TLS с начала соединения (обычно порт 465)</label><p class="muted small">Для порта 587 используется обязательный STARTTLS.</p>
+      <label for="email-user">Логин SMTP</label><input id="email-user" autocomplete="off"><label for="email-password">Пароль SMTP</label><input id="email-password" type="password" autocomplete="new-password"><p id="email-secret-note" class="muted small"></p>
+      <button type="button" id="test-email" class="secondary">Отправить тестовый email</button>
+    </details>
+    <details id="telegram-details" class="channel-section"><summary>Telegram <span id="telegram-state" class="muted small"></span></summary>
+      <label class="checkbox-label"><input id="telegram-enabled" type="checkbox"> Отправлять в Telegram</label>
+      <label for="telegram-token">Токен бота</label><input id="telegram-token" type="password" autocomplete="new-password"><p id="telegram-secret-note" class="muted small"></p>
+      <label for="telegram-chat">Chat ID получателя</label><input id="telegram-chat" autocomplete="off" placeholder="Например, 123456789"><p class="muted small">Создайте бота в @BotFather и отправьте ему /start. Укажите свой Chat ID или ID группы, в которую добавили бота.</p>
+      <button type="button" id="test-telegram" class="secondary">Отправить тестовое сообщение</button>
+    </details>
+    <section class="channel-section"><h3>Сводка дел на день</h3><label class="checkbox-label"><input id="digest-enabled" type="checkbox"> Присылать ежедневную сводку</label>
+      <label for="digest-mode">Когда присылать</label><select id="digest-mode"><option value="morning">Утром — дела на сегодня</option><option value="evening">Вечером — дела на завтра</option></select>
+      <div class="form-grid digest-grid"><div><label for="digest-time">Время сводки</label><input id="digest-time" type="time" value="08:00" required></div><div><label for="digest-zone">Часовой пояс сводки</label><input id="digest-zone" list="timezones" required></div></div>
+      <fieldset class="notification-channels"><legend>Каналы сводки</legend><label class="checkbox-label"><input id="digest-email" type="checkbox"> Email</label><label class="checkbox-label"><input id="digest-telegram" type="checkbox"> Telegram</label></fieldset>
+      <p class="muted small">Включает дела на выбранный день и просроченные задачи. Задачи без срока в сводку не входят.</p>
+    </section>
+    <details class="channel-section"><summary>Последние доставки</summary><div id="notification-deliveries" class="small"></div></details>
+    <p class="muted small">Для проверки канала сначала сохраните настройки. Пароли и токены остаются на сервере.</p>
+    <p id="notifications-error" class="error" role="alert"></p><p id="notifications-status" role="status" class="small"></p>
+    <div class="dialog-actions"><button type="button" class="secondary" data-close="notifications-dialog">Закрыть</button><button class="primary" type="submit">Сохранить уведомления</button></div>
   </form>
 </dialog>
 <div id="toast" class="toast" role="status" hidden><span id="toast-text"></span><button id="toast-undo" hidden>Отменить</button></div>

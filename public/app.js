@@ -1,3 +1,4 @@
+import { initNotifications } from './notifications.js';
 const $ = selector => document.querySelector(selector);
 let tasks = [], history = [], view = 'all', preview = null, editTask = null, previewSequence = 0, timer, toastTimer;
 let settings;
@@ -11,6 +12,7 @@ async function api(path, { method = 'GET', body } = {}) {
   if (!response.ok) { if (response.status === 401 && path !== '/login') showLogin(); const error = new Error(data.error || 'Не удалось выполнить запрос'); error.status = response.status; throw error; }
   return data;
 }
+const { openReminders } = initNotifications({ api, reload: load, getSettings: () => settings, notify });
 function node(tag, className, text) { const el = document.createElement(tag); if (className) el.className = className; if (text !== undefined) el.textContent = text; return el; }
 function today(zone = settings.timezone) { return new Intl.DateTimeFormat('en-CA', { timeZone: zone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date()); }
 function dateLabel(due) {
@@ -81,7 +83,10 @@ function render() {
     });
     const content = node('div', 'task-main'); content.append(node('div', 'task-title', task.title), meta(task));
     const actions = node('div', 'task-actions');
-    if (!task.completedAt) actions.append(actionButton('Редактировать задачу', '✎', () => openEdit(task)));
+    if (!task.completedAt) {
+      actions.append(actionButton('Напомнить', task.reminders?.length ? `🔔 ${task.reminders.length}` : '🔔 Напомнить', () => openReminders(task), 'reminder-action'));
+      actions.append(actionButton('Редактировать задачу', '✎', () => openEdit(task)));
+    }
     actions.append(actionButton('Удалить задачу', '×', async () => {
       if (!confirm(`Удалить «${task.title}» и историю её выполнений?`)) return;
       try { await api(`/tasks/${task.id}`, { method: 'DELETE', body: { revision: task.revision } }); await load(); notify('Задача удалена'); } catch (e) { $('#page-error').textContent = e.message; }

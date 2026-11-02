@@ -109,3 +109,22 @@ input[type=checkbox], input[type=radio] { accent-color: var(--accent); }
 #settings-dialog input[type=color] { width: 32px; height: 32px; border: 1px solid var(--border); border-radius: 6px; padding: 3px; cursor: pointer; }
 .settings-divider { border-top: 1px solid var(--line); margin-top: 24px; }
 @media(max-width:400px) { .theme-options { gap: 6px; } #settings-dialog { padding: 22px; } }
+
+/* Notifications share the current theme and accent. */
+#notifications-dialog, #reminders-dialog { width: min(560px, calc(100vw - 28px)); max-height: calc(100dvh - 40px); overflow-y: auto; }
+.settings-link { width: 100%; text-align: left; margin-bottom: 16px; }
+.channel-section { border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin: 16px 0; }
+.channel-section summary { cursor: pointer; font-weight: 650; }
+.channel-section summary span { margin-left: 8px; font-weight: 400; }
+.channel-section h3 { margin: 0 0 16px; font-size: 16px; }
+.channel-section .secondary { margin-top: 12px; }
+.form-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 14px; }
+.form-grid.digest-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); }
+.form-grid > div { min-width: 0; }
+.notification-channels { border: 0; padding: 0; margin: 20px 0 8px; display: flex; flex-wrap: wrap; gap: 18px; }
+.notification-channels legend { margin-bottom: 4px; font-size: 13px; color: var(--muted); }
+.notification-channels .checkbox-label { margin: 8px 0; }
+.reminder-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--border); }
+.reminder-row .small { margin-top: 4px; }
+.reminder-action { width: auto; height: auto; min-height: 27px; font-size: 12px; white-space: nowrap; padding: 6px 8px; }
+@media(max-width: 480px) { .form-grid, .form-grid.digest-grid { grid-template-columns: minmax(0, 1fr); gap: 0; } .task-actions { flex-wrap: wrap; } .reminder-action { font-size: 11px; } }

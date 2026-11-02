@@ -124,3 +124,22 @@ test('settings require authentication, validate atomically and persist for anoth
     assert.deepEqual(updated, { ...saved, theme: 'system' });
   } finally { if (app?.server.listening) await app.close(); rmSync(dir, { recursive: true, force: true }); }
 });
+
+test('notification API protects credentials and reminder mutations with session, origin and revision checks', async t => {
+  const app = await start(':memory:', { notificationSender: async () => {} }); t.after(() => app.close());
+  assert.equal((await app.request('/api/notifications')).response.status, 401);
+  await app.login();
+  const cfg = await app.request('/api/notifications', { telegram: { enabled: true, token: '12345:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', chatId: '123456' } }, 'PATCH');
+  assert.equal(cfg.response.status, 200); assert.equal(cfg.data.config.telegram.token, undefined); assert.equal(cfg.data.config.telegram.tokenSet, true);
+  assert.doesNotMatch(JSON.stringify((await app.request('/api/notifications')).data), /aaaaaaaaaa/);
+  assert.equal((await app.request('/api/notifications/test', { channel: 'telegram' })).response.status, 200);
+  let task = (await app.request('/api/tasks', { source: 'Встреча завтра в 15' })).data.task;
+  const body = { kind: 'before', minutes: 30, channels: ['telegram'], revision: task.revision };
+  const created = await app.request(`/api/tasks/${task.id}/reminders`, body);
+  assert.equal(created.response.status, 201); task = created.data.task; assert.equal(task.reminders.length, 1);
+  assert.equal((await app.request(`/api/tasks/${task.id}/reminders`, body)).response.status, 409);
+  assert.equal((await app.request(`/api/tasks/${task.id}/reminders`, { ...body, revision: task.revision }, 'POST', { Origin: 'https://evil.example' })).response.status, 403);
+  const removed = await app.request(`/api/tasks/${task.id}/reminders/${task.reminders[0].id}`, { revision: task.revision }, 'DELETE');
+  assert.equal(removed.data.task.reminders.length, 0);
+  assert.doesNotMatch(JSON.stringify((await app.request('/api/export')).data), /aaaaaaaaaa/);
+});
