@@ -77,7 +77,7 @@ export function initProjectViews({ api, reload, redraw, today, getTimezone, make
     toolbar.append(button('‹', 'Предыдущий период', () => { anchor = nextAnchor(anchor, mode, -1); redraw(); }), node('h2', '', heading), button('›', 'Следующий период', () => { anchor = nextAnchor(anchor, mode, 1); redraw(); }), button('Сегодня', 'Перейти к сегодняшнему дню', () => { anchor = today(); redraw(); }));
     const dateInput = document.createElement('input'); dateInput.type = 'date'; dateInput.value = anchor; dateInput.setAttribute('aria-label','Перейти к дате'); dateInput.addEventListener('change', () => { if (/^\d{4}-\d\d-\d\d$/.test(dateInput.value)) { anchor=dateInput.value; redraw(); } }); toolbar.append(dateInput);
     host.append(toolbar, node('p', 'muted small', `Часовой пояс: ${timezone}. Повторяющиеся задачи показывают ближайший срок.`));
-    const projected = tasks.filter(t => t.due).map(task => ({ task, date:calendarTaskDate(task, timezone) }));
+    const projected = tasks.filter(t => t.due).map(task => ({ task, date:calendarTaskDate(task, timezone) })).sort((a,b) => a.date.date.localeCompare(b.date.date) || (a.date.time || '').localeCompare(b.date.time || ''));
     const wrap = node('div', 'calendar-scroll'), grid = node('div', `calendar-grid ${mode === 'month' ? 'month-grid' : 'time-grid'}`);
     if (mode === 'three-days') grid.classList.add('three-days');
     if (mode !== 'month') grid.append(node('div','calendar-day-heading','Время'));
