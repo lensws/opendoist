@@ -328,3 +328,23 @@ test('backup connection check authenticates, enforces origin and does not save d
  const result=await app.request('/api/backups/test',{folder:'/tmp/test-draft'});assert.equal(result.response.status,200);assert.equal(result.data.ok,true);assert.equal(tested.folder,'/tmp/test-draft');
  assert.deepEqual((await app.request('/api/backups')).data.config,before);assert.equal((await app.request('/api/backups/test',{folder:'relative'})).response.status,400);
 });
+
+test('built-in layouts persist independently and reject invalid settings atomically', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'opendoist-views-')), database = join(dir, 'db.sqlite');
+  let app;
+  try {
+    app = await start(database); await app.login();
+    const views = {inbox:{layout:'board',calendar:'week'}, today:{layout:'calendar',calendar:'day'}, upcoming:{layout:'calendar',calendar:'month'}};
+    for (const [key,value] of Object.entries(views)) {
+      assert.equal((await app.request('/api/settings', {views:{[key]:value}}, 'PATCH')).response.status, 200);
+    }
+    assert.deepEqual((await app.request('/api/settings')).data.settings.views, views);
+    for (const bad of [null, [], {all:{layout:'list',calendar:'month'}}, {today:{layout:'calendar',calendar:'week'}}, {inbox:{layout:'bad',calendar:'week'}}, {upcoming:{layout:'board',calendar:'bad'}}, {inbox:{layout:'board',calendar:'week',extra:1}}]) {
+      assert.equal((await app.request('/api/settings', {views:bad}, 'PATCH')).response.status, 400);
+      assert.deepEqual((await app.request('/api/settings')).data.settings.views, views);
+    }
+    await app.request('/api/settings', {theme:'dark'}, 'PATCH');
+    await app.close(); app = await start(database); await app.login();
+    assert.deepEqual((await app.request('/api/settings')).data.settings.views, views);
+  } finally { if (app?.server.listening) await app.close(); rmSync(dir, {recursive:true,force:true}); }
+});

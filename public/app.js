@@ -85,7 +85,7 @@ function render() {
   if (!titles[view] && !entity) view = 'inbox';
   $('#view-title').textContent = entity?.name || titles[view];
   projectUI.draw(view);
-  const layout = projectViews.configure(view.startsWith('project:') ? entity : null);
+  const layout = projectViews.configure(view.startsWith('project:') ? entity : null, view, settings.views);
   $('#task-list').hidden = layout !== 'list';
   document.querySelectorAll('[data-view]').forEach(el => { const active = el.dataset.view === view; el.classList.toggle('active', active); if (active) el.setAttribute('aria-current', 'page'); else el.removeAttribute('aria-current'); });
   const active = tasks.filter(t => !t.completedAt);
@@ -106,7 +106,7 @@ function render() {
   const manual = !!entity || view === 'inbox';
   if (manual) selected.sort((a,b) => sections.findIndex(s => s.id === a.sectionId) - sections.findIndex(s => s.id === b.sectionId) || compareTasks(a,b));
   $('#task-summary').textContent = `Задач: ${selected.length}`; $('#empty').hidden = !!selected.length;
-  if (layout !== 'list') { $('#empty').hidden = true; projectViews.draw(selected, sections.filter(s => s.projectId === entity.id)); return; }
+  if (layout !== 'list') { $('#empty').hidden = true; projectViews.draw(selected, sections.filter(s => s.projectId === entity?.id)); return; }
   let lastGroup;
   const tree = manual ? orderedTree(selected, (a,b) => sections.findIndex(s => s.id === a.sectionId) - sections.findIndex(s => s.id === b.sectionId) || compareTasks(a,b)) : selected.map(task => ({task, depth:0}));
   const treeTasks = tree.map(e => e.task);

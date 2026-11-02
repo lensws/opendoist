@@ -1,6 +1,7 @@
 // UTC arithmetic here represents calendar dates, not task instants or browser-local time.
 export function shiftDate(date, days) { const d = new Date(`${date}T12:00:00Z`); d.setUTCDate(d.getUTCDate() + days); return d.toISOString().slice(0, 10); }
 export function calendarRange(anchor, mode) {
+  if (mode === 'day') return [anchor];
   if (mode === 'three-days') return Array.from({length:3}, (_, i) => shiftDate(anchor, i));
   const first = mode === 'month' ? `${anchor.slice(0,7)}-01` : anchor;
   const weekday = (new Date(`${first}T12:00:00Z`).getUTCDay() + 6) % 7;
@@ -11,7 +12,7 @@ export function calendarRange(anchor, mode) {
   return Array.from({length:days}, (_, i) => shiftDate(start, i));
 }
 export function nextAnchor(anchor, mode, direction) {
-  if (mode !== 'month') return shiftDate(anchor, direction * (mode === 'week' ? 7 : 3));
+  if (mode !== 'month') return shiftDate(anchor, direction * (mode === 'day' ? 1 : mode === 'week' ? 7 : 3));
   const d = new Date(`${anchor.slice(0,7)}-01T12:00:00Z`); d.setUTCMonth(d.getUTCMonth()+direction); return d.toISOString().slice(0,10);
 }
 export function calendarTaskDate(task, timezone) {

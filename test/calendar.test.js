@@ -37,3 +37,9 @@ test('current-time line uses calendar timezone and fractional hour across midnig
   assert.equal(clock.date,'2026-11-03'); assert.equal(clock.time,'00:30'); assert.equal(clock.hour,0); assert.equal(clock.fraction,30.5/60);
   assert.equal(calendarClock('America/New_York', new Date('2026-11-02T21:30:30Z')).time,'16:30');
 });
+
+test('single-day calendar stays on the anchor and advances by one day', () => {
+  assert.deepEqual(calendarRange('2026-12-31', 'day'), ['2026-12-31']);
+  assert.equal(nextAnchor('2026-12-31', 'day', 1), '2027-01-01');
+  assert.equal(nextAnchor('2024-03-01', 'day', -1), '2024-02-29');
+});

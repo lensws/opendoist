@@ -219,3 +219,8 @@ input[type=checkbox], input[type=radio] { accent-color: var(--accent); }
 .task-drag-active,.task-drag-active *{cursor:grabbing!important;user-select:none!important}.task-drag-active .task.dragging{opacity:.2}
 
 .backup-check-success{color:var(--accent-ink)}
+
+.time-grid.one-day{grid-template-columns:70px minmax(0,1fr);min-width:0}
+
+.one-day .calendar-day-heading{height:40px}
+.one-day .calendar-all-day{position:sticky;top:40px;z-index:2;background:var(--surface-soft)}

@@ -98,13 +98,20 @@ export class Store {
     return row ? { submitShortcut: 'enter', ...JSON.parse(row.data) } : { submitShortcut: 'enter', theme: 'system', accent: '#c95736', timezone: 'Europe/Moscow', language: 'auto' };
   }
   saveSettings(patch) {
-    const allowed = ['theme', 'accent', 'timezone', 'language', 'submitShortcut'];
+    const allowed = ['theme', 'accent', 'timezone', 'language', 'submitShortcut', 'views'];
     if (Object.keys(patch).some(key => !allowed.includes(key))) throw new AppError(400, 'Неизвестная настройка');
     const next = { ...this.settings(), ...patch };
     if (!['light', 'dark', 'system'].includes(next.theme) || !['auto', 'ru', 'en'].includes(next.language) || typeof next.accent !== 'string' || !/^#[0-9a-f]{6}$/i.test(next.accent)) throw new AppError(400, 'Некорректные настройки оформления или языка');
     if (typeof next.timezone !== 'string' || !next.timezone.trim() || next.timezone.length > 100) throw new AppError(400, 'Некорректный часовой пояс');
     try { new Intl.DateTimeFormat('ru', { timeZone: next.timezone }); } catch { throw new AppError(400, 'Некорректный часовой пояс'); }
     if (!['enter', 'ctrl-enter'].includes(next.submitShortcut)) throw new AppError(400, 'Выберите Enter или Ctrl+Enter');
+    if (patch.views !== undefined) {
+      if (!patch.views || typeof patch.views !== 'object' || Array.isArray(patch.views)) throw new AppError(400, 'Некорректные виды разделов');
+      for (const [key, value] of Object.entries(patch.views)) {
+        if (!['inbox', 'today', 'upcoming'].includes(key) || !value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).some(k => !['layout', 'calendar'].includes(k)) || !['list', 'board', 'calendar'].includes(value.layout) || !['month', 'week', 'three-days', 'day'].includes(value.calendar) || (key === 'today' && value.calendar !== 'day')) throw new AppError(400, 'Некорректный вид раздела');
+      }
+      next.views = { ...this.settings().views, ...patch.views };
+    }
     next.accent = next.accent.toLowerCase();
     this.db.prepare('INSERT INTO settings (id,data) VALUES (1,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data').run(JSON.stringify(next));
     return next;

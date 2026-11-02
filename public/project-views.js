@@ -7,6 +7,7 @@ export function initProjectViews({ api, reload, redraw, today, getTimezone, make
   const controls = document.querySelector('#project-view-controls'), layout = document.querySelector('#project-layout'), scale = document.querySelector('#calendar-scale');
   const host = document.querySelector('#project-view');
   const scrollPositions = new Map();
+  let currentView = null;
   let currentProject = null, anchor = null, dragged = null, saving = false;
   function updateCurrentTime() {
     host.querySelectorAll('.current-time-line,.current-time-label').forEach(el => el.remove());
@@ -23,19 +24,31 @@ export function initProjectViews({ api, reload, redraw, today, getTimezone, make
   }
   setInterval(updateCurrentTime, 30000);
   async function changeView() {
-    if (!currentProject || saving) return;
+    if ((!currentProject && !currentView) || saving) return;
     const project = currentProject; saving = true; layout.disabled = scale.disabled = true;
-    try { await api(`/projects/${project.id}/view`, { method:'PATCH', body:{ revision:project.revision, view:{ layout:layout.value, calendar:scale.value } } }); await reload(); }
+    try {
+      const preference = { layout:layout.value, calendar:currentView === 'today' ? 'day' : scale.value };
+      if (project) await api(`/projects/${project.id}/view`, { method:'PATCH', body:{ revision:project.revision, view:preference } });
+      else await api('/settings', {method:'PATCH', body:{views:{[currentView]:preference}}});
+      await reload();
+    }
     catch (error) { notify(error.message); await reload(); }
     finally { saving = false; layout.disabled = scale.disabled = false; }
   }
   layout.addEventListener('change', changeView); scale.addEventListener('change', changeView);
-  function configure(project) {
-    if (project?.id !== currentProject?.id) anchor = today();
-    currentProject = project; controls.hidden = !project; host.hidden = true; host.replaceChildren();
-    const mode = project?.view?.layout || 'list';
-    layout.value = mode; scale.value = project?.view?.calendar || 'month'; scale.hidden = mode !== 'calendar';
-    document.querySelector('.content').classList.toggle('wide-view', !!project && mode !== 'list');
+  function configure(project, view, preferences = {}) {
+    const builtIn = ['inbox', 'today', 'upcoming'].includes(view) ? view : null;
+    if (project?.id !== currentProject?.id || builtIn !== currentView) anchor = today();
+    currentProject = project; currentView = builtIn;
+    if (builtIn === 'today') anchor = today();
+    controls.hidden = !project && !builtIn; host.hidden = true; host.replaceChildren();
+    const preference = project?.view || preferences[builtIn];
+    const mode = preference?.layout || 'list';
+    layout.value = mode; scale.value = builtIn === 'today' ? 'day' : preference?.calendar || 'month';
+    scale.querySelector('[value="day"]').hidden = !!project;
+    scale.querySelector('[value="day"]').disabled = !!project;
+    scale.hidden = mode !== 'calendar' || builtIn === 'today';
+    document.querySelector('.content').classList.toggle('wide-view', !!(project || builtIn) && mode !== 'list');
     return mode;
   }
   async function move(task, patch, schedule = false) {
@@ -56,6 +69,23 @@ export function initProjectViews({ api, reload, redraw, today, getTimezone, make
     el.addEventListener('dragover', event => { if (!dragged) return; event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = 'move'; el.classList.add('drop-target'); });
     el.addEventListener('dragleave', event => { if (!el.contains(event.relatedTarget)) el.classList.remove('drop-target'); });
     el.addEventListener('drop', event => { event.preventDefault(); event.stopPropagation(); el.classList.remove('drop-target'); const task = dragged; dragged = null; if (task) action(task); });
+  }
+  function globalBoard(tasks) {
+    const board = node('div', 'project-board');
+    const dated = tasks.map(task => ({task, date:calendarTaskDate(task, getTimezone())?.date || null}));
+    const dates = [...new Set([today(), ...dated.map(e => e.date).filter(Boolean)])].sort();
+    for (const date of [...dates, null]) {
+      const entries = dated.filter(e => e.date === date).map(e => e.task);
+      if (!entries.length && currentView !== 'inbox' && date !== today()) continue;
+      const name = date === null ? 'Без срока' : date === today() ? 'Сегодня' : dateLabel(date);
+      const column = node('section', 'board-column'); column.setAttribute('aria-label', name);
+      column.append(node('h2', 'board-heading', `${name} · ${entries.length}`));
+      dropZone(column, task => move(task, {date}, true));
+      for (const task of entries) { const row = makeTaskRow(task); row.classList.add('board-card'); draggable(row, task); column.append(row); }
+      column.append(button('＋ Добавить задачу', `Добавить задачу: ${name}`, () => addTask({projectId:null, date}), 'add-inline'));
+      board.append(column);
+    }
+    host.append(board);
   }
   function board(tasks, sections) {
     const board = node('div', 'project-board');
@@ -86,14 +116,24 @@ export function initProjectViews({ api, reload, redraw, today, getTimezone, make
     return card;
   }
   function calendar(tasks) {
-    const mode = scale.value, dates = calendarRange(anchor, mode), timezone = getTimezone();
+    const mode = currentView === 'today' ? 'day' : scale.value, dates = calendarRange(anchor, mode), timezone = getTimezone();
     const toolbar = node('div', 'calendar-toolbar');
-    const heading = mode === 'month' ? new Date(`${anchor}T12:00:00Z`).toLocaleDateString('ru', {month:'long',year:'numeric',timeZone:'UTC'}) : `${dateLabel(dates[0])} — ${dateLabel(dates.at(-1))}`;
+    const heading = mode === 'day' ? dateLabel(dates[0]) : mode === 'month' ? new Date(`${anchor}T12:00:00Z`).toLocaleDateString('ru', {month:'long',year:'numeric',timeZone:'UTC'}) : `${dateLabel(dates[0])} — ${dateLabel(dates.at(-1))}`;
     toolbar.append(button('‹', 'Предыдущий период', () => { anchor = nextAnchor(anchor, mode, -1); redraw(); }), node('h2', '', heading), button('›', 'Следующий период', () => { anchor = nextAnchor(anchor, mode, 1); redraw(); }), button('Сегодня', 'Перейти к сегодняшнему дню', () => { anchor = today(); redraw(); }));
     const dateInput = document.createElement('input'); dateInput.type = 'date'; dateInput.value = anchor; dateInput.setAttribute('aria-label','Перейти к дате'); dateInput.addEventListener('change', () => { if (/^\d{4}-\d\d-\d\d$/.test(dateInput.value)) { anchor=dateInput.value; redraw(); } }); toolbar.append(dateInput);
+    if (currentView === 'today') toolbar.replaceChildren(node('h2', '', heading));
     host.append(toolbar, node('p', 'muted small', `Часовой пояс: ${timezone}. Повторяющиеся задачи показывают ближайший срок.`));
     const projected = tasks.filter(t => t.due).map(task => ({ task, date:calendarTaskDate(task, timezone) })).sort((a,b) => a.date.date.localeCompare(b.date.date) || (a.date.time || '').localeCompare(b.date.time || ''));
+    if (currentView === 'today') {
+      const overdue = projected.filter(e => e.date.date < today());
+      if (overdue.length) {
+        const panel = node('section', 'calendar-unscheduled'); panel.append(node('h2', 'board-heading', `Просрочено · ${overdue.length}`));
+        for (const entry of overdue) panel.append(calendarCard(entry.task, entry.date));
+        host.append(panel);
+      }
+    }
     const wrap = node('div', 'calendar-scroll'), grid = node('div', `calendar-grid ${mode === 'month' ? 'month-grid' : 'time-grid'}`);
+    if (mode === 'day') grid.classList.add('one-day');
     if (mode === 'three-days') grid.classList.add('three-days');
     if (mode !== 'month') grid.append(node('div','calendar-day-heading','Время'));
     const headers = mode === 'month' ? dates.slice(0,7) : dates;
@@ -102,7 +142,7 @@ export function initProjectViews({ api, reload, redraw, today, getTimezone, make
       const el = node('div', `calendar-cell${date === today() ? ' calendar-today' : ''}${month && date.slice(0,7) !== anchor.slice(0,7) ? ' other-month' : ''}`);
       el.dataset.calendarDate = date; if (time) el.dataset.hour = String(Number(time.slice(0,2)));
       el.setAttribute('aria-label', `${dateLabel(date)}${time ? ' '+time : ''}`);
-      const add = button(month ? String(Number(date.slice(-2))) : '＋', `Добавить задачу ${date}${time ? ' в '+time : ''}`, () => addTask({ projectId:currentProject.id, date, time }), 'calendar-add');
+      const add = button(month ? String(Number(date.slice(-2))) : '＋', `Добавить задачу ${date}${time ? ' в '+time : ''}`, () => addTask({ projectId:currentProject?.id || null, date, time }), 'calendar-add');
       el.append(add);
       for (const entry of entries) el.append(calendarCard(entry.task, entry.date));
       dropZone(el, task => move(task, { date, time:month ? calendarTaskDate(task, timezone)?.time ?? null : time }, true));
@@ -111,15 +151,15 @@ export function initProjectViews({ api, reload, redraw, today, getTimezone, make
     if (mode === 'month') {
       for (const date of dates) grid.append(cell(date, null, projected.filter(e => e.date.date === date).sort((a,b) => (a.date.time || '').localeCompare(b.date.time || '')), true));
     } else {
-      grid.append(node('div','calendar-hour','Весь день'));
-      for (const date of dates) grid.append(cell(date, null, projected.filter(e => e.date.date === date && !e.date.time)));
+      grid.append(node('div','calendar-hour calendar-all-day','Весь день'));
+      for (const date of dates) { const allDay = cell(date, null, projected.filter(e => e.date.date === date && !e.date.time)); allDay.classList.add('calendar-all-day'); grid.append(allDay); }
       for (let hour=0; hour<24; hour++) {
         const time = `${String(hour).padStart(2,'0')}:00`; const hourLabel = node('div','calendar-hour',time); hourLabel.dataset.hour = String(hour); grid.append(hourLabel);
         for (const date of dates) grid.append(cell(date, time, projected.filter(e => e.date.date === date && Number(e.date.time?.slice(0,2)) === hour)));
       }
     }
     wrap.append(grid); host.append(wrap);
-    const scrollKey = `${currentProject.id}:${mode}:${dates[0]}`;
+    const scrollKey = `${currentProject?.id || currentView}:${mode}:${dates[0]}`;
     const restoreScroll = scrollPositions.get(scrollKey);
     if (restoreScroll !== undefined) wrap.scrollTop = restoreScroll;
     else if (mode !== 'month') { const now = calendarClock(timezone); const firstHour = grid.querySelectorAll('.calendar-hour')[dates.includes(now.date) ? Math.max(1, now.hour) : 9]; if (firstHour) wrap.scrollTop = firstHour.offsetTop - grid.offsetTop - 40; }
@@ -131,6 +171,6 @@ export function initProjectViews({ api, reload, redraw, today, getTimezone, make
     if (!pending.length) unscheduled.append(node('p','muted small','Перетащите сюда задачу, чтобы убрать срок.'));
     dropZone(unscheduled, task => move(task, { date:null }, true)); host.append(unscheduled);
   }
-  function draw(tasks, sections) { host.hidden = false; if (layout.value === 'board') board(tasks, sections); else calendar(tasks); }
+  function draw(tasks, sections) { host.hidden = false; if (layout.value === 'board') { if (currentProject) board(tasks, sections); else globalBoard(tasks); } else calendar(tasks); }
   return { configure, draw };
 }
