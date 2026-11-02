@@ -132,7 +132,9 @@ function makeTaskRow(task) {
     if (task.parentId) { const parent = tasks.find(t => t.id === task.parentId); if (parent) { const label=node('div','muted small markdown'); label.innerHTML=`↳ ${markdown(parent.title)}`; content.append(label); } }
     const actions = node('div', 'task-actions');
     if (!task.completedAt) {
-      actions.append(actionButton('Напомнить', task.reminders?.length ? `🔔 ${task.reminders.length}` : '🔔 Напомнить', () => openReminders(task), 'reminder-action'));
+      const reminder = actionButton(task.reminders?.length ? `Напомнить (${task.reminders.length})` : 'Напомнить', '', () => openReminders(task), 'reminder-action');
+      reminder.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg>';
+      actions.append(reminder);
     }
     actions.append(actionButton('Открыть задачу', '✎', () => openEdit(task)));
     actions.append(actionButton('Удалить задачу', '×', async () => {

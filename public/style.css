@@ -126,8 +126,8 @@ input[type=checkbox], input[type=radio] { accent-color: var(--accent); }
 .notification-channels .checkbox-label { margin: 8px 0; }
 .reminder-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--border); }
 .reminder-row .small { margin-top: 4px; }
-.reminder-action { width: auto; height: auto; min-height: 27px; font-size: 12px; white-space: nowrap; padding: 6px 8px; }
-@media(max-width: 480px) { .form-grid, .form-grid.digest-grid { grid-template-columns: minmax(0, 1fr); gap: 0; } .task-actions { flex-wrap: wrap; } .reminder-action { font-size: 11px; } }
+.reminder-action svg { display: block; width: 16px; height: 16px; margin: auto; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+@media(max-width: 480px) { .form-grid, .form-grid.digest-grid { grid-template-columns: minmax(0, 1fr); gap: 0; } .task-actions { flex-wrap: wrap; } }
 
 .sidebar-search { margin: 2px 0 14px; padding: 7px 10px; border: 1px solid var(--border); border-radius: 8px; color: var(--muted); background: var(--surface); }
 .sidebar-search input { min-width: 0; width: 100%; font-size: 13px; color: var(--text); }
