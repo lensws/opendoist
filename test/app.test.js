@@ -92,9 +92,10 @@ test('online backup script produces a restorable SQLite snapshot', async () => {
   const store = new Store(database);
   try {
     const original = store.create({ title: 'Backup test', due: null, recurrence: null });
+    const note = store.saveNote({title:'Backup note',body:'# Markdown\n\nБез даты'});
     execFileSync(process.execPath, ['server/backup.js', snapshot], { env: { DATABASE_PATH: database }, stdio: 'pipe' });
     const restored = new Store(snapshot);
-    try { assert.equal(restored.list()[0].id, original.id); } finally { restored.close(); }
+    try { assert.equal(restored.list()[0].id, original.id); assert.deepEqual(restored.note(note.id),note); } finally { restored.close(); }
   } finally { store.close(); rmSync(dir, { recursive: true, force: true }); }
 });
 
@@ -201,7 +202,6 @@ test('import rejects malformed schedules atomically, requires authentication and
     assert.equal(app.store.list().length, 1);
   }
   assert.equal((await app.request('/api/import', empty, 'POST', { Origin: 'https://evil.example' })).response.status, 403);
-  assert.equal((await app.request('/api/import', { ...empty, padding: 'x'.repeat(10 * 1024 * 1024) })).response.status, 413);
 });
 
 test('import accepts exports over the ordinary request limit and rolls back storage failures', async t => {
@@ -371,4 +371,47 @@ test('new recurrence rules survive API completion, undo, export and import', asy
   assert.throws(()=>validateImport(forged),/правило/);
   const badBusiness=structuredClone(exported); const business=badBusiness.tasks.find(t=>t.recurrence.businessInterval); business.recurrence.businessInterval=-1;
   assert.throws(()=>validateImport(badBusiness),/интервал рабочих/);
+});
+
+test('notes persist without scheduling; revisions prevent overwrites and deletion conflicts', async () => {
+  const dir=mkdtempSync(join(tmpdir(),'opendoist-notes-')), database=join(dir,'db.sqlite'); let app;
+  try {
+    app=await start(database);
+    assert.equal((await app.request('/api/notes')).response.status,401);
+    assert.equal((await app.request('/api/notes',{title:'Note',body:'text'})).response.status,401);
+    await app.login();
+    assert.equal((await app.request('/api/notes',{title:'Note',body:'text'},'POST',{Origin:'https://evil.example'})).response.status,403);
+    assert.equal((await app.request('/api/notes',{title:' ',body:'text'})).response.status,400);
+    assert.equal((await app.request('/api/notes',{title:'Note',body:42})).response.status,400);
+    const created=await app.request('/api/notes',{title:'Завтра каждый день',body:'# Markdown\n\n**Текст**\n\n<script>alert(1)</script>',due:{date:'2030-01-01'}});
+    assert.equal(created.response.status,201); const note=created.data.note;
+    assert.deepEqual(Object.keys(note).sort(),['body','id','revision','title']);
+    assert.equal(app.store.list().length,0);
+    assert.deepEqual((await app.request('/api/notes')).data.notes,[{id:note.id,title:note.title,revision:1}]);
+    const edited=await app.request(`/api/notes/${note.id}`,{title:'Новый заголовок',body:'новый текст',revision:1},'PATCH');
+    assert.equal(edited.data.note.revision,2);
+    assert.equal((await app.request(`/api/notes/${note.id}`,{title:'stale',body:'stale',revision:1},'PATCH')).response.status,409);
+    assert.equal((await app.request(`/api/notes/${note.id}`,{revision:1},'DELETE')).response.status,409);
+    await app.close();app=await start(database);await app.login();
+    assert.deepEqual((await app.request(`/api/notes/${note.id}`)).data.note,edited.data.note);
+    assert.equal((await app.request(`/api/notes/${note.id}`,{revision:2},'DELETE')).response.status,200);
+    assert.equal((await app.request(`/api/notes/${note.id}`)).response.status,404);
+  } finally {if(app?.server.listening)await app.close();rmSync(dir,{recursive:true,force:true});}
+});
+
+test('notes larger than the old import limit round-trip without truncation', async t => {
+  const source=await start(), target=await start();t.after(()=>source.close());t.after(()=>target.close());await source.login();await target.login();
+  const body='# Большая заметка\n\n'+'Текст без дат.\n'.repeat(850000);
+  assert.ok(Buffer.byteLength(body)>10*1024*1024);
+  const created=await source.request('/api/notes',{title:'Длинный Markdown',body});assert.equal(created.response.status,201);
+  const note=created.data.note;
+  assert.equal((await source.request(`/api/notes/${note.id}`)).data.note.body,body);
+  assert.equal(JSON.stringify((await source.request('/api/notes')).data).length<300,true);
+  const exported=(await source.request('/api/export')).data;
+  const preview=await target.request('/api/import/preview',exported);assert.equal(preview.data.notes,1);assert.equal(target.store.notes().length,0);
+  assert.equal((await target.request('/api/import',exported)).data.notes,1);
+  assert.deepEqual((await target.request(`/api/notes/${note.id}`)).data.note,note);
+  assert.equal((await target.request('/api/import',exported)).data.notesSkipped,1);
+  const invalid={...exported,notes:[note,{...note,id:'invalid'}]};assert.equal((await target.request('/api/import',invalid)).response.status,400);
+  const legacy={version:1,tasks:[],history:[],projects:[],sections:[]};assert.equal((await target.request('/api/import',legacy)).response.status,200);
 });

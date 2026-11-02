@@ -1,3 +1,4 @@
+import { initNotes } from './notes.js';
 import { fetchWorkspace } from './workspace-data.js';
 import { orderedTree, compareTasks } from './task-tree.js';
 import { markdown } from './markdown.js';
@@ -16,13 +17,14 @@ let settings;
 try { settings = JSON.parse(localStorage.getItem('opendoist.settings')) || {}; } catch { settings = {}; }
 settings = { timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Moscow', language: 'auto', ...settings, ...window.OpenDoistAppearance.normalize(settings) };
 try { new Intl.DateTimeFormat('ru', { timeZone: settings.timezone }); } catch { settings.timezone = 'Europe/Moscow'; }
-const titles = { inbox: 'Входящие', all: 'Все задачи', today: 'Сегодня', upcoming: 'Предстоящие', completed: 'Выполненные', history: 'История' };
+const titles = { notes:'Заметки', inbox: 'Входящие', all: 'Все задачи', today: 'Сегодня', upcoming: 'Предстоящие', completed: 'Выполненные', history: 'История' };
 async function api(path, { method = 'GET', body } = {}) {
   const response = await fetch(`/api${path}`, { method, headers: body ? { 'Content-Type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined });
   const data = await response.json();
   if (!response.ok) { if (response.status === 401 && path !== '/login') showLogin(); const error = new Error(data.error || 'Не удалось выполнить запрос'); error.status = response.status; throw error; }
   return data;
 }
+const notesUI = initNotes({api,notify});
 initBackups({api});
 const taskDetails = initTaskDetails({api, getTasks:() => tasks, reload:load, notify});
 const projectUI = initProjects({ api, getData: () => ({ projects, sections, tasks }), reload: load, selectView: next => { view = next; render(); }, notify });
@@ -53,7 +55,7 @@ function recurringLabel(task) {
   const spans = task.spans?.filter(s => s.kind === 'recurrence' || s.kind === 'mode');
   return spans?.length ? spans.map(s => s.text).join(' ') : 'Повторяется';
 }
-function showLogin() { loadSequence++; $('#workspace').hidden = true; $('#login-screen').hidden = false; tasks = []; history = []; $('#task-list').replaceChildren(); for (const dialog of document.querySelectorAll('dialog[open]')) dialog.close(); }
+function showLogin() { notesUI.reset(); loadSequence++; $('#workspace').hidden = true; $('#login-screen').hidden = false; tasks = []; history = []; $('#task-list').replaceChildren(); for (const dialog of document.querySelectorAll('dialog[open]')) dialog.close(); }
 let loadSequence = 0;
 async function load() {
   const sequence = ++loadSequence;
@@ -86,8 +88,14 @@ function render() {
   $('#view-title').textContent = entity?.name || titles[view];
   projectUI.draw(view);
   const layout = projectViews.configure(view.startsWith('project:') ? entity : null, view, settings.views);
-  $('#task-list').hidden = layout !== 'list';
+  $('#task-list').hidden = layout !== 'list' || view === 'notes';
+  $('.list-toolbar').hidden = view === 'notes';
+  $('.page-footer').hidden = view === 'notes';
+  $('#search').placeholder = view === 'notes' ? 'Найти заметку по заголовку' : 'Найти задачу';
+  $('#search').setAttribute('aria-label',view === 'notes' ? 'Поиск заметок по заголовку' : 'Поиск задач');
   document.querySelectorAll('[data-view]').forEach(el => { const active = el.dataset.view === view; el.classList.toggle('active', active); if (active) el.setAttribute('aria-current', 'page'); else el.removeAttribute('aria-current'); });
+  if (view === 'notes') { $('#empty').hidden=true; syncComposer(); notesUI.show($('#search').value); return; }
+  notesUI.hide();
   const active = tasks.filter(t => !t.completedAt);
   const filters = { inbox: active.filter(t => !t.projectId), all: active, today: active.filter(t => t.due && t.due.date <= today(t.due.timezone)), upcoming: active.filter(t => t.due && t.due.date > today(t.due.timezone)), completed: tasks.filter(t => t.completedAt) };
   for (const key of Object.keys(filters)) { const counter = $(`#count-${key}`); if (counter) counter.textContent = filters[key].length; }
@@ -95,7 +103,7 @@ function render() {
   const query = $('#search').value.trim().toLocaleLowerCase();
   const list = $('#task-list'); list.replaceChildren();
   $('#empty h2').textContent = query ? 'Ничего не найдено' : view === 'today' ? 'На сегодня всё' : view === 'completed' ? 'Первые победы впереди' : view === 'history' ? 'История пока пуста' : 'Здесь пока спокойно';
-  $('#empty p').textContent = query ? 'Попробуйте другое название.' : view === 'today' ? 'Можно выдохнуть — или выбрать следующий шаг.' : ['completed', 'history'].includes(view) ? 'Завершённые задачи появятся здесь.' : 'Добавьте задачу. Даже большой план начинается с маленького шага.';
+  $('#empty p').textContent = query ? 'Попробуйте другое название.' : view === 'today' ? 'Можно выдохнуть — или выбрать следующий шаг.' : ['completed', 'history', 'notes'].includes(view) ? 'Завершённые задачи появятся здесь.' : 'Добавьте задачу. Даже большой план начинается с маленького шага.';
   syncComposer();
   if (view === 'history') {
     const rows = history.filter(h => h.task.title.toLocaleLowerCase().includes(query));
@@ -187,12 +195,12 @@ $('#add-form').addEventListener('submit', async event => {
 document.querySelectorAll('[data-view]').forEach(el => el.addEventListener('click', async () => { view = el.dataset.view; if ($('#settings-dialog').open) $('#settings-dialog').close(); render(); try { if (view === 'history') await load(); } catch (e) { $('#page-error').textContent = e.message; } }));
 $('#search').addEventListener('input', render);
 function syncComposer() {
-  const unavailable = ['completed', 'history'].includes(view);
+  const unavailable = ['completed', 'history', 'notes'].includes(view);
   $('#add-form').hidden = unavailable || !composerOpen;
   $('#add-open').hidden = unavailable || composerOpen;
   $('#add-open').setAttribute('aria-expanded', String(composerOpen && !unavailable));
 }
-function focusAdd() { if (['completed', 'history'].includes(view)) { view = 'inbox'; render(); } composerOpen = true; syncComposer(); $('#task-input').focus(); }
+function focusAdd() { if (['completed', 'history', 'notes'].includes(view)) { view = 'inbox'; render(); } composerOpen = true; syncComposer(); $('#task-input').focus(); }
 function addInView({ projectId, sectionId = null, date = null, time = null }) {
   if ($('#task-input').value.trim()) { focusAdd(); notify('В форме есть черновик. Добавьте его или очистите текст.'); return; }
   projectUI.fillPlacement('add', projectId, sectionId); focusAdd();

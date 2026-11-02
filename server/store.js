@@ -33,7 +33,29 @@ export class Store {
       CREATE TABLE IF NOT EXISTS attachments (id TEXT PRIMARY KEY, task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE, name TEXT NOT NULL, data BLOB NOT NULL, created_at TEXT NOT NULL);
       CREATE INDEX IF NOT EXISTS attachments_task ON attachments(task_id);
       CREATE TABLE IF NOT EXISTS backup_config (id INTEGER PRIMARY KEY CHECK(id=1), data TEXT NOT NULL);
-      PRAGMA user_version=5;`);
+      CREATE TABLE IF NOT EXISTS notes (id TEXT PRIMARY KEY, data TEXT NOT NULL);
+      PRAGMA user_version=6;`);
+  }
+  notes(full = false) {
+    return full ? this.db.prepare('SELECT data FROM notes ORDER BY rowid DESC').all().map(r => JSON.parse(r.data))
+      : this.db.prepare("SELECT id, json_extract(data,'$.title') AS title, json_extract(data,'$.revision') AS revision FROM notes ORDER BY rowid DESC").all();
+  }
+  note(id) {
+    const row=this.db.prepare('SELECT data FROM notes WHERE id=?').get(id);
+    if (!row) throw new AppError(404,'Заметка не найдена');
+    return JSON.parse(row.data);
+  }
+  saveNote(body, id = null) {
+    if (typeof body.title !== 'string' || !body.title.trim() || typeof body.body !== 'string') throw new AppError(400,'Укажите заголовок и текст заметки');
+    const old=id ? this.note(id) : null;
+    if (old && body.revision !== old.revision) throw new AppError(409,'Заметка изменена в другом окне. Ваш текст сохранён в редакторе; скопируйте его перед повторным открытием.');
+    const note={id:id || randomUUID(), title:body.title.trim(), body:body.body, revision:(old?.revision || 0)+1};
+    this.db.prepare('INSERT INTO notes(id,data) VALUES (?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data').run(note.id,JSON.stringify(note));
+    return note;
+  }
+  deleteNote(id, revision) {
+    if (this.note(id).revision !== revision) throw new AppError(409,'Заметка изменена в другом окне. Откройте её заново.');
+    this.db.prepare('DELETE FROM notes WHERE id=?').run(id);
   }
   projects() { return this.db.prepare('SELECT data FROM projects ORDER BY rowid').all().map((r, index) => ({ ...JSON.parse(r.data), position: JSON.parse(r.data).position ?? index })).sort((a,b) => a.position-b.position); }
   reorderProjects(ids, previousIds) {
@@ -133,7 +155,10 @@ export class Store {
       const fresh = document.tasks.filter(task => !exists.get(task.id));
       const ids = new Set(fresh.map(task => task.id));
       const history = document.history.filter(item => ids.has(item.task.id));
+      const noteExists=this.db.prepare('SELECT 1 FROM notes WHERE id=?');
+      const newNotes=(document.notes || []).filter(n=>!noteExists.get(n.id));
       const result = { added: fresh.length, skipped: document.tasks.length - fresh.length, history: history.length };
+      if (document.notes?.length) { result.notes=newNotes.length; result.notesSkipped=document.notes.length-newNotes.length; }
       const newProjects = document.projects.filter(p => !this.projects().some(e => e.id === p.id));
       const newSections = document.sections.filter(s => !this.sections().some(e => e.id === s.id));
       if (newProjects.length || newSections.length) { result.projects = newProjects.length; result.sections = newSections.length; }
@@ -149,6 +174,7 @@ export class Store {
         }
       }
       if (!preview) {
+        for (const note of newNotes) this.db.prepare('INSERT INTO notes(id,data) VALUES (?,?)').run(note.id,JSON.stringify(note));
         const nextPosition = Math.max(-1, ...this.projects().map(p => p.position)) + 1;
         newProjects.forEach((p, index) => this.db.prepare('INSERT INTO projects (id,data) VALUES (?,?)').run(p.id, JSON.stringify({ ...p, position: nextPosition + index })));
         for (const s of newSections) this.db.prepare('INSERT INTO sections (id,project_id,data) VALUES (?,?,?)').run(s.id, s.projectId, JSON.stringify(s));

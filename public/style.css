@@ -224,3 +224,6 @@ input[type=checkbox], input[type=radio] { accent-color: var(--accent); }
 
 .one-day .calendar-day-heading{height:40px}
 .one-day .calendar-all-day{position:sticky;top:40px;z-index:2;background:var(--surface-soft)}
+
+.notes-heading{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:16px}.notes-heading h2{margin:0;font-size:24px}.notes-list{display:grid;gap:8px}.note-card{width:100%;text-align:left;padding:16px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--text);overflow-wrap:anywhere}.note-card:hover{background:var(--surface-soft)}
+#note-dialog{width:min(900px,calc(100vw - 32px));max-width:900px;max-height:90dvh;overflow:auto}#note-body{width:100%;min-height:40vh;resize:vertical;font-family:ui-monospace,monospace;line-height:1.6}#note-preview{min-height:40vh;overflow-wrap:anywhere;padding:12px;border:1px solid var(--line);border-radius:6px}#note-preview pre{overflow:auto}#note-form .notes-heading{margin-top:16px}#note-form .notes-heading label{margin:0}

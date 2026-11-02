@@ -3,7 +3,7 @@ import rrule from 'rrule';
 import { entityFields, projectView } from './projects.js';
 import { AppError } from './store.js';
 const { RRule } = rrule;
-export const IMPORT_LIMIT = 10 * 1024 * 1024;
+export const IMPORT_LIMIT = Infinity; // Notes have no application-level text-size limit.
 const uuid = value => typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
 const obj = value => value && typeof value === 'object' && !Array.isArray(value);
 const fail = message => { throw new AppError(400, `Не удалось импортировать: ${message}`); };
@@ -117,5 +117,7 @@ export function validateImport(document) {
     if (!projectIds.has(h.task.projectId)) { h.task.projectId = null; h.task.sectionId = null; }
     if (!sections.some(s => s.id === h.task.sectionId && s.projectId === h.task.projectId)) h.task.sectionId = null;
   }
-  return { tasks, history, projects, sections };
+  const notes=document.notes ?? [];
+  if (!Array.isArray(notes) || notes.some(n => !obj(n) || !uuid(n.id) || typeof n.title !== 'string' || !n.title.trim() || typeof n.body !== 'string' || !Number.isSafeInteger(n.revision) || n.revision < 1) || new Set(notes.map(n=>n.id.toLowerCase())).size !== notes.length) fail('некорректные заметки');
+  return { tasks, history, projects, sections, notes:notes.map(n=>({id:n.id.toLowerCase(),title:n.title,body:n.body,revision:n.revision})) };
 }

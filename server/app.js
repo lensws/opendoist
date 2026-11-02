@@ -9,7 +9,7 @@ import { Store, AppError } from './store.js';
 import { TelegramInbox } from './telegram.js';
 import { NotificationWorker, publicConfig, validateConfig, makeReminder } from './notifications.js';
 
-const assets = new Map(['workspace-data.js', 'task-tree.js', 'task-details.js', 'markdown.js', 'backups.js', 'index.html', 'app.js', 'style.css', 'icon.svg', 'appearance.js', 'notifications.js', 'transfer.js', 'projects.js', 'project-views.js', 'calendar-model.js', 'submit-shortcut.js', 'task-input.js', 'emoji-picker.js', 'emoji-search.js', 'emojis.json', 'emojis-LICENSE.txt'].map(name => [name, readFileSync(new URL(`../public/${name}`, import.meta.url))]));
+const assets = new Map(['notes.js', 'workspace-data.js', 'task-tree.js', 'task-details.js', 'markdown.js', 'backups.js', 'index.html', 'app.js', 'style.css', 'icon.svg', 'appearance.js', 'notifications.js', 'transfer.js', 'projects.js', 'project-views.js', 'calendar-model.js', 'submit-shortcut.js', 'task-input.js', 'emoji-picker.js', 'emoji-search.js', 'emojis.json', 'emojis-LICENSE.txt'].map(name => [name, readFileSync(new URL(`../public/${name}`, import.meta.url))]));
 const mime = { json: 'application/json; charset=utf-8', txt: 'text/plain; charset=utf-8', html: 'text/html; charset=utf-8', js: 'text/javascript; charset=utf-8', css: 'text/css; charset=utf-8', svg: 'image/svg+xml' };
 const SESSION_AGE = 7 * 86400 * 1000;
 async function readJSON(req, limit = 16384) {
@@ -141,13 +141,21 @@ export function createApp({ password, database = './data/opendoist.sqlite', publ
       }
       if (path === '/api/settings' && method === 'GET') return send(200, { settings: store.settings() });
       if (path === '/api/settings' && method === 'PATCH') return send(200, { settings: store.saveSettings(await readJSON(req)) });
+      if (path === '/api/notes' && method === 'GET') return send(200,{notes:store.notes()});
+      if (path === '/api/notes' && method === 'POST') return send(201,{note:store.saveNote(await readJSON(req,Infinity))});
+      const noteMatch=/^\/api\/notes\/([a-f0-9-]+)$/.exec(path);
+      if (noteMatch) {
+        if (method === 'GET') return send(200,{note:store.note(noteMatch[1])});
+        if (method === 'PATCH') return send(200,{note:store.saveNote(await readJSON(req,Infinity),noteMatch[1])});
+        if (method === 'DELETE') { const body=await readJSON(req); store.deleteNote(noteMatch[1],body.revision); return send(200,{ok:true}); }
+      }
       if (path === '/api/tasks' && method === 'GET') return send(200, { tasks: store.list() });
       if (path === '/api/history' && method === 'GET') return send(200, { history: store.history() });
       if (['/api/import', '/api/import/preview'].includes(path) && method === 'POST') {
         const document = validateImport(await readJSON(req, IMPORT_LIMIT));
         return send(200, store.importTasks(document, path.endsWith('/preview')));
       }
-      if (path === '/api/export' && method === 'GET') return send(200, { version: 1, exportedAt: new Date().toISOString(), tasks: store.list(), history: store.history(), projects: store.projects(), sections: store.sections() }, { 'Content-Disposition': 'attachment; filename="opendoist-export.json"' });
+      if (path === '/api/export' && method === 'GET') return send(200, { version: 1, exportedAt: new Date().toISOString(), tasks: store.list(), history: store.history(), projects: store.projects(), sections: store.sections(), notes:store.notes(true) }, { 'Content-Disposition': 'attachment; filename="opendoist-export.json"' });
       if (path === '/api/parse' && method === 'POST') {
         const preview = parse(await readJSON(req));
         const upcoming = preview.parsed.recurrence?.mode === 'calendar' ? occurrences(preview.parsed, { after: preview.reference, count: 3 }) : [];
