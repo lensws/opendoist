@@ -1,15 +1,15 @@
 // Todoist-style date grammar. All calculations use the supplied local calendar.
-const MONTHS = [
+export const MONTHS = [
   'jan(?:uary)?|янв(?:арь|аря)?', 'feb(?:ruary)?|фев(?:раль|раля)?',
   'mar(?:ch)?|мар(?:т|та)?', 'apr(?:il)?|апр(?:ель|еля)?',
   'may|ма[йя]', 'jun(?:e)?|июн[ья]?', 'jul(?:y)?|июл[ья]?',
-  'aug(?:ust)?|авг(?:уст|уста)?', 'sep(?:t(?:ember)?)?|сен(?:тябрь|тября)?',
+  'aug(?:ust)?|авг(?:уст|уста)?', 'sep(?:t(?:ember)?)?|сен(?:т(?:ябрь|ября)?)?',
   'oct(?:ober)?|окт(?:ябрь|ября)?', 'nov(?:ember)?|ноя(?:брь|бря)?',
   'dec(?:ember)?|дек(?:абрь|абря)?',
 ];
-export const DAYS = ['mon(?:day)?|пн|понедельник', 'tue(?:sday)?|вт|вторник', 'wed(?:nesday)?|ср|сред[ау]', 'thu(?:rsday)?|чт|четверг', 'fri(?:day)?|пт|пятниц[ау]', 'sat(?:urday)?|сб|суббот[ау]', 'sun(?:day)?|вс|воскресенье'];
+export const DAYS = ['mon(?:day)?|пн|понедельник', 'tue(?:s(?:day)?)?|вт|вторник', 'wed(?:nesday)?|ср|сред[ау]?', 'thu(?:rs(?:day)?)?|чт|четверг', 'fri(?:day)?|пт|пятниц[ау]', 'sat(?:urday)?|сб|суббот[ау]', 'sun(?:day)?|вс|воскресенье'];
 export const weekday = text => DAYS.findIndex(p => new RegExp(`^(?:${p})$`, 'iu').test(text)) + 1;
-const month = text => MONTHS.findIndex(p => new RegExp(`^(?:${p})\\.?$`, 'iu').test(text)) + 1;
+export const month = text => MONTHS.findIndex(p => new RegExp(`^(?:${p})\\.?$`, 'iu').test(text)) + 1;
 const upcoming = (d, day, strict = false) => d.plus({ days: (day - d.weekday + 7) % 7 || (strict ? 7 : 0) });
 const unit = s => /^(day|д)/u.test(s) ? 'days' : /^(week|нед)/u.test(s) ? 'weeks' : /^(month|мес)/u.test(s) ? 'months' : /^(year|год|лет)/u.test(s) ? 'years' : /^(hour|час)/u.test(s) ? 'hours' : 'minutes';
 export const unitName = unit;
@@ -29,7 +29,7 @@ function annual(ref, m, d) {
 }
 export function parseClock(text) {
   let s = text.trim().replace(/^(?:at\s+|в\s+|@\s*)/u, '');
-  const parts = { 'утром': 9, 'утро': 9, 'in the morning': 9, 'morning': 9, 'днем': 12, 'днём': 12, 'in the afternoon': 12, 'afternoon': 12, 'noon': 12, 'полдень': 12, 'вечером': 19, 'вечер': 19, 'in the evening': 19, 'evening': 19, 'ночью': 22, 'night': 22 };
+  const parts = { 'утром': 9, 'утро': 9, 'in the morning': 9, 'morning': 9, 'днем': 12, 'днём': 12, 'in the afternoon': 12, 'afternoon': 12, 'noon': 12, 'полдень': 12, 'вечером': 19, 'вечер': 19, 'in the evening': 19, 'evening': 19, 'ночь': 22, 'ночью': 22, 'night': 22 };
   if (s in parts) return { hour: parts[s], minute: 0 };
   const m = /^(\d{1,2})(?::(\d{2}))?\s*(am|pm|утра|дня|вечера|ночи)?$/.exec(s);
   if (m) {
@@ -103,7 +103,9 @@ export function exactDate(text, ref, settings = {}, depth = 0) {
   if (!m) { const reverse = /^([^\s]+)\s+(\d{1,2})(?:st|nd|rd|th)?(?:,?\s+(\d{4}))?$/.exec(s); if (reverse) m = [reverse[0], reverse[2], reverse[1], reverse[3]]; }
   if (m && month(m[2])) return result(m[3] ? calendarDate(ref, +m[3], month(m[2]), +m[1]) : annual(ref, month(m[2]), +m[1]));
   if (/^(?:новый год|new year day|new year's day)$/.test(s)) return result(annual(ref, 1, 1));
-  if (/^(?:new year eve|new year's eve)$/.test(s)) return result(annual(ref, 12, 31));
+  if (/^(?:канун нового года|new year eve|new year's eve)$/.test(s)) return result(annual(ref, 12, 31));
+  if (/^(?:день (?:святого )?валентина|valentine|valentine[’']s day)$/.test(s)) return result(annual(ref, 2, 14));
+  if (/^(?:хэллоуин|halloween)$/.test(s)) return result(annual(ref, 10, 31));
   // Bare date-field numbers: 1..12 denote an ambiguous hour, 13..31 a day.
   m = /^(\d{1,2})(st|nd|rd|th)?$/.exec(s);
   if (m && (m[2] || +m[1] > 12)) return result(calendarDate(ref, ref.year, ref.month, +m[1]));

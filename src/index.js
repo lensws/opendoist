@@ -67,7 +67,7 @@ export function parseTask(text, { now = new Date(), timezone = 'Europe/Moscow', 
   const natural = extractDate(remainder, reference, settings);
   if (natural?.error) return review(natural.error);
   const residual = natural?.span ? mask(remainder, [natural.span]) : remainder;
-  if (/(?<![\p{L}\p{N}])(?:at|в|@)\s*\d{1,4}(?::\d{2})?(?![\p{L}\p{N}])/iu.test(residual)) return review('Unrecognized or conflicting time');
+  if (/(?<![\p{L}\p{N}])(?:at|в|@)\s*\d{1,4}(?::\d{2})?\s*(?:am|pm)?(?![\p{L}\p{N}])/iu.test(residual)) return review('Unrecognized or conflicting time');
   if (natural?.clear) {
     if (recurrence) return review('Cannot combine a recurrence and no date');
     spans.push(natural.span);
@@ -98,6 +98,10 @@ export function parseTask(text, { now = new Date(), timezone = 'Europe/Moscow', 
   if (!found && /(?:\b(?:at|tomorrow|today)\b|(?<!\p{L})(?:завтра|сегодня|в)(?!\p{L}))\s*\d/iu.test(remainder)) return review('Date or time could not be parsed');
   if (!found && !recurrence) return { ...base, title: clean(text, spans), spans, deadline };
   if (recurrence) {
+    if (recurrenceResult.clock) {
+      if (found && !allDay) return review('Conflicting recurrence times');
+      date = date.set(recurrenceResult.clock); allDay = false;
+    }
     // RRULE operates on wall-clock components in a synthetic UTC timeline.
     // Convert to real instants only at the API boundary, independent of host TZ.
     if (natural?.span && parseClock(natural.span.text)) date = reference.startOf('day').set({ hour: date.hour, minute: date.minute });
@@ -111,12 +115,23 @@ export function parseTask(text, { now = new Date(), timezone = 'Europe/Moscow', 
       const wd = options.byweekday[0] + 1;
       date = date.plus({ days: ((wd - date.weekday + 7) % 7 || 7) + 7 });
     }
-    const rule = new RRule({ ...options, ...(recurrenceResult.until ? { until: wallDate(recurrenceResult.until) } : {}), dtstart: wallDate(date) });
+    const rules = recurrenceResult.rules.map(ruleOptions => new RRule({ ...ruleOptions, ...(recurrenceResult.until ? { until:wallDate(recurrenceResult.until) } : {}), dtstart:wallDate(date) }));
     const threshold = allDay ? reference.startOf('day') : reference;
-    const first = rule.after(wallDate(threshold), true);
+    let first = rules.map(rule => rule.after(wallDate(threshold), true)).filter(Boolean).sort((a,b) => a-b)[0];
+    if (recurrenceResult.businessInterval) {
+      const anchor = rules[0].after(wallDate(date), true);
+      const temporary = {due:{allDay}, recurrence:{businessInterval:recurrenceResult.businessInterval, rrule:rules[0].toString().split('\n').find(line => line.startsWith('RRULE:'))}};
+      const candidate = anchor && businessOccurrences(temporary, fromWall(anchor,timezone), threshold.minus({milliseconds:1}), 1)[0];
+      first = candidate ? wallDate(instant(candidate.instant || `${candidate.date}T00:00:00`,timezone)) : null;
+    }
     if (!first) return review('No occurrence found');
     date = fromWall(first, timezone);
-    recurrence = { ...recurrence, dtstart: date.toFormat("yyyy-MM-dd'T'HH:mm:ss"), rrule: rule.toString().split('\n').find(line => line.startsWith('RRULE:')) };
+    if (!allDay && (date.hour !== first.getUTCHours() || date.minute !== first.getUTCMinutes())) return review('Nonexistent local time');
+    const serialized = rules.map(rule => rule.toString().split('\n').find(line => line.startsWith('RRULE:')));
+    recurrence = { ...recurrence, dtstart:date.toFormat("yyyy-MM-dd'T'HH:mm:ss"), rrule:serialized[0],
+      ...(serialized.length > 1 ? {rrules:serialized} : {}),
+      ...(recurrenceResult.businessInterval ? {businessInterval:recurrenceResult.businessInterval} : {}) };
+
   }
   return { ...base, status: 'scheduled', title: clean(text, spans), due: due(date, allDay), recurrence, spans, deadline, warnings };
 }
@@ -129,12 +144,13 @@ export function occurrences(task, { after = new Date(), count = 5 } = {}) {
   if (!task.recurrence || task.recurrence.mode !== 'calendar') throw new TypeError('Calendar recurrence required');
   const r = task.recurrence;
   const start = instant(r.dtstart, r.timezone);
-  const rule = new RRule({ ...RRule.parseString(r.rrule), dtstart: wallDate(start) });
+  const rules = (r.rrules || [r.rrule]).map(value => new RRule({ ...RRule.parseString(value), dtstart: wallDate(start) }));
   const threshold = instant(after, r.timezone);
+  if (r.businessInterval) return businessOccurrences(task, start, threshold, count);
   let cursor = wallDate(threshold);
   const output = [];
   for (let attempts = 0; output.length < count && attempts < count + 370; attempts++) {
-    const next = rule.after(cursor, false);
+    const next = rules.map(rule => rule.after(cursor, false)).filter(Boolean).sort((a,b) => a-b)[0];
     if (!next) break;
     cursor = next;
     const local = fromWall(next, r.timezone);
@@ -161,4 +177,25 @@ export function nextAfterCompletion(task, completedAt) {
   const end = RRule.parseString(r.rrule).until;
   if (end && wallDate(next) > end) return null;
   return due(next, task.due.allDay);
+}
+
+// The anchor is a weekday. Jump whole weeks, then at most four remaining workdays.
+function addBusinessDays(start, count) {
+  let result = start.plus({weeks:Math.floor(count / 5)});
+  for (let remaining=count % 5; remaining>0;) { result=result.plus({days:1}); if (result.weekday <= 5) remaining--; }
+  return result;
+}
+function businessOccurrences(task, start, threshold, count) {
+  const interval=task.recurrence.businessInterval;
+  const elapsed=Math.max(0, Math.floor(threshold.startOf('day').diff(start.startOf('day'), 'days').days));
+  let workdays=Math.floor(elapsed / 7)*5;
+  for(let i=Math.floor(elapsed/7)*7; i<elapsed; i++) if (start.plus({days:i}).weekday<=5) workdays++;
+  let index=Math.max(0, Math.floor(workdays / interval));
+  const until=RRule.parseString(task.recurrence.rrule).until, result=[];
+  for(let attempts=0; result.length<count && attempts<count+370; attempts++,index++) {
+    const next=addBusinessDays(start,index*interval);
+    if(until && wallDate(next)>until) break;
+    if(next>threshold && (task.due.allDay || next.hour===start.hour)) result.push(due(next,task.due.allDay));
+  }
+  return result;
 }

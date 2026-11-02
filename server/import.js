@@ -28,17 +28,28 @@ function recurrence(value, schedule, label) {
   if (value == null) return null;
   const frequencies = ['YEARLY', 'MONTHLY', 'WEEKLY', 'DAILY', 'HOURLY', 'MINUTELY'];
   if (!obj(value) || !schedule || !['calendar', 'after_completion'].includes(value.mode) || !frequencies.includes(value.frequency) || !Number.isInteger(value.interval) || value.interval < 1 || value.interval > 1000 || value.timezone !== schedule.timezone || !str(value.dtstart, 19) || !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d$/.test(value.dtstart) || !DateTime.fromISO(value.dtstart, { zone: value.timezone }).isValid || !str(value.rrule, 500) || !value.rrule.startsWith('RRULE:')) fail(`некорректное повторение (${label})`);
-  const parts = value.rrule.slice(6).split(';');
-  if (new Set(parts.map(p => p.split('=')[0])).size !== parts.length || parts.some(p => !/^(FREQ|INTERVAL|UNTIL|BYDAY|BYMONTH|BYMONTHDAY)=/.test(p))) fail(`неподдерживаемое правило повторения (${label})`);
-  try {
-    const options = RRule.parseString(value.rrule);
-    if (options.freq !== frequencies.indexOf(value.frequency) || (options.interval ?? 1) !== value.interval) throw Error();
-    for (const [key, min, max] of [['bymonth', 1, 12], ['bymonthday', 1, 31]]) if (options[key] && [].concat(options[key]).some(v => !Number.isInteger(v) || v < min || v > max)) throw Error();
-    if (options.byweekday && [].concat(options.byweekday).some(v => typeof v === 'number' ? v < 0 || v > 6 : v.weekday < 0 || v.weekday > 6 || (v.n != null && (v.n < 1 || v.n > 5)))) throw Error();
-    if (options.until && !Number.isFinite(+options.until)) throw Error();
-    new RRule({ ...options, dtstart: new Date(`${value.dtstart}Z`) });
-  } catch { fail(`некорректное правило повторения (${label})`); }
-  return { mode: value.mode, frequency: value.frequency, interval: value.interval, timezone: value.timezone, dtstart: value.dtstart, rrule: value.rrule };
+  const rules = value.rrules ?? [value.rrule];
+  if (!Array.isArray(rules) || !rules.length || rules.length > 32 || rules[0] !== value.rrule || (rules.length > 1 && value.mode !== 'calendar')) fail(`некорректный список повторений (${label})`);
+  for (const rule of rules) {
+    if (!str(rule,500) || !rule.startsWith('RRULE:')) fail(`некорректное правило (${label})`);
+    const parts = rule.slice(6).split(';');
+    if (new Set(parts.map(p => p.split('=')[0])).size !== parts.length || parts.some(p => !/^(FREQ|INTERVAL|UNTIL|BYDAY|BYMONTH|BYMONTHDAY|BYSETPOS)=/.test(p))) fail(`неподдерживаемое правило повторения (${label})`);
+    try {
+      const options = RRule.parseString(rule);
+      if (options.freq !== frequencies.indexOf(value.frequency) || (options.interval ?? 1) !== value.interval) throw Error();
+      for (const [key, min, max] of [['bymonth',1,12], ['bymonthday',-1,31], ['bysetpos',-1,23]]) if (options[key] && [].concat(options[key]).some(v => !Number.isInteger(v) || v === 0 || v < min || v > max)) throw Error();
+      if (options.byweekday && [].concat(options.byweekday).some(v => typeof v === 'number' ? v < 0 || v > 6 : v.weekday < 0 || v.weekday > 6 || (v.n != null && (v.n !== -1 && (v.n < 1 || v.n > 5))))) throw Error();
+      if (options.until && !Number.isFinite(+options.until)) throw Error();
+      new RRule({ ...options, dtstart: new Date(`${value.dtstart}Z`) });
+    } catch { fail(`некорректное правило повторения (${label})`); }
+  }
+  if (value.businessInterval !== undefined) {
+    const options=RRule.parseString(value.rrule);
+    if (!Number.isInteger(value.businessInterval) || value.businessInterval < 1 || value.businessInterval > 1000 || value.mode !== 'calendar' || value.frequency !== 'DAILY' || value.interval !== 1 || rules.length !== 1 || options.bymonth || options.bymonthday || options.bysetpos || JSON.stringify(options.byweekday?.map(d => typeof d === 'number' ? d : d.n == null ? d.weekday : -1)) !== '[0,1,2,3,4]' || DateTime.fromISO(value.dtstart).weekday > 5) fail(`некорректный интервал рабочих дней (${label})`);
+  }
+  return { mode:value.mode, frequency:value.frequency, interval:value.interval, timezone:value.timezone, dtstart:value.dtstart, rrule:value.rrule,
+    ...(value.rrules ? {rrules:rules} : {}), ...(value.businessInterval !== undefined ? {businessInterval:value.businessInterval} : {}) };
+
 }
 function task(value, label) {
   if (!obj(value) || !uuid(value.id) || !str(value.title, 500) || !value.title.trim() || !Number.isSafeInteger(value.revision) || value.revision < 1 || !stamp(value.createdAt) || !stamp(value.updatedAt) || (value.completedAt != null && !stamp(value.completedAt))) fail(`некорректная задача (${label})`);

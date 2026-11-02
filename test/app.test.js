@@ -348,3 +348,27 @@ test('built-in layouts persist independently and reject invalid settings atomica
     assert.deepEqual((await app.request('/api/settings')).data.settings.views, views);
   } finally { if (app?.server.listening) await app.close(); rmSync(dir, {recursive:true,force:true}); }
 });
+
+test('new recurrence rules survive API completion, undo, export and import', async t => {
+  const app=await start(); t.after(()=>app.close()); await app.login();
+  const phrases=['every 14 jan, 14 apr, 15 jun, 15 sep','every 1st wed jan, 3rd thu jul','every first workday','every last day','every 3 workday'];
+  for(const phrase of phrases) {
+    const created=await app.request('/api/tasks',{source:`Task ${phrase}`,timezone:'Europe/Moscow'});
+    assert.equal(created.response.status,201,JSON.stringify(created.data));
+    const task=created.data.task;
+    const done=await app.request(`/api/tasks/${task.id}/complete`,{revision:task.revision});
+    assert.equal(done.response.status,200); assert.deepEqual(done.data.task.recurrence,task.recurrence);
+    assert.notDeepEqual(done.data.task.due,task.due);
+    const undo=await app.request(`/api/tasks/${task.id}/undo`,{revision:done.data.task.revision});
+    assert.equal(undo.response.status,200);assert.deepEqual(undo.data.task.due,task.due);
+  }
+  const exported=(await app.request('/api/export')).data;
+  const {validateImport}=await import('../server/import.js');
+  const restored=validateImport(exported);
+  assert.deepEqual(restored.tasks.map(t=>t.recurrence),exported.tasks.map(t=>t.recurrence));
+  const forged=structuredClone(exported); forged.tasks[0].recurrence.rrules=['RRULE:FREQ=YEARLY;COUNT=999999999'];
+  forged.tasks[0].recurrence.rrule=forged.tasks[0].recurrence.rrules[0];
+  assert.throws(()=>validateImport(forged),/правило/);
+  const badBusiness=structuredClone(exported); const business=badBusiness.tasks.find(t=>t.recurrence.businessInterval); business.recurrence.businessInterval=-1;
+  assert.throws(()=>validateImport(badBusiness),/интервал рабочих/);
+});
