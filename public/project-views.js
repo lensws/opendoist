@@ -162,7 +162,7 @@ export function initProjectViews({ api, reload, redraw, today, getTimezone, make
     const scrollKey = `${currentProject?.id || currentView}:${mode}:${dates[0]}`;
     const restoreScroll = scrollPositions.get(scrollKey);
     if (restoreScroll !== undefined) wrap.scrollTop = restoreScroll;
-    else if (mode !== 'month') { const now = calendarClock(timezone); const firstHour = grid.querySelectorAll('.calendar-hour')[dates.includes(now.date) ? Math.max(1, now.hour) : 9]; if (firstHour) wrap.scrollTop = firstHour.offsetTop - grid.offsetTop - 40; }
+    else if (mode !== 'month') { const now = calendarClock(timezone); const firstHour = grid.querySelectorAll('.calendar-hour')[dates.includes(now.date) ? Math.max(1, now.hour) : 9]; if (firstHour) wrap.scrollTop = firstHour.offsetTop - grid.offsetTop - 40 - (mode === 'day' ? grid.querySelector('.calendar-all-day').offsetHeight : 0); }
     updateCurrentTime();
     wrap.addEventListener('scroll', () => { if (scrollPositions.size > 30) scrollPositions.delete(scrollPositions.keys().next().value); scrollPositions.set(scrollKey, wrap.scrollTop); });
     const unscheduled = node('section', 'calendar-unscheduled'); unscheduled.setAttribute('aria-label','Задачи без срока');
