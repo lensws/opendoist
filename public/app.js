@@ -63,7 +63,6 @@ function render() {
   if (!titles[view] && !entity) view = 'inbox';
   $('#view-title').textContent = entity?.name || titles[view][0]; $('#view-description').textContent = entity ? (entity.projectId ? projects.find(p => p.id === entity.projectId)?.name : 'Задачи проекта') : titles[view][1];
   projectUI.draw(view);
-  $('#today-label').textContent = new Date().toLocaleDateString('ru', { weekday: 'long', day: 'numeric', month: 'long', timeZone: settings.timezone });
   document.querySelectorAll('[data-view]').forEach(el => { const active = el.dataset.view === view; el.classList.toggle('active', active); if (active) el.setAttribute('aria-current', 'page'); else el.removeAttribute('aria-current'); });
   const active = tasks.filter(t => !t.completedAt);
   const filters = { inbox: active.filter(t => !t.projectId), all: active, today: active.filter(t => t.due && t.due.date <= today(t.due.timezone)), upcoming: active.filter(t => t.due && t.due.date > today(t.due.timezone)), completed: tasks.filter(t => t.completedAt) };
