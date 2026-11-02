@@ -73,3 +73,11 @@ test('attachments enforce size/count and disappear only with their own task',()=
  s.mutate(task.id,task.revision,()=>null);assert.equal(s.db.prepare('SELECT count(*) AS n FROM attachments').get().n,0);
  }finally{s.close();}
 });
+
+test('rapid task creation assigns distinct persistent positions in newest-first order',()=>{
+ const s=new Store(':memory:');try{
+ const created=Array.from({length:30},(_,i)=>create(s,`Task ${i}`));
+ assert.equal(new Set(created.map(t=>t.position)).size,30);
+ assert.deepEqual(orderedTree(s.list()).map(e=>e.task.id),created.reverse().map(t=>t.id));
+ }finally{s.close();}
+});

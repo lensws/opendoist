@@ -211,7 +211,10 @@ export class Store {
     const parent = parsed.parentId ? this.get(parsed.parentId) : null;
     if (parent?.completedAt) throw new AppError(400, 'Родительская задача уже выполнена');
     let ancestor = parent, depth = 0; while (ancestor) { if (++depth > 10) throw new AppError(400, 'Не более 10 уровней вложенности'); ancestor = ancestor.parentId ? this.get(ancestor.parentId) : null; }
-    const task = { description: '', projectId:null, sectionId:null, parentId: null, position: -Date.now(), ...parsed, ...(parent ? { projectId:parent.projectId, sectionId:parent.sectionId } : {}), id: randomUUID(), revision: 1, createdAt: now, updatedAt: now, completedAt: null };
+    const placement = parent || parsed;
+    const siblings = this.list().filter(t => (t.parentId ?? null) === (parsed.parentId ?? null) && (t.projectId ?? null) === (placement.projectId ?? null) && (t.sectionId ?? null) === (placement.sectionId ?? null));
+    const position = Math.min(0, ...siblings.map(t => t.position ?? 0)) - 1;
+    const task = { description: '', projectId:null, sectionId:null, parentId: null, position, ...parsed, ...(parent ? { projectId:parent.projectId, sectionId:parent.sectionId } : {}), id: randomUUID(), revision: 1, createdAt: now, updatedAt: now, completedAt: null };
     this.db.prepare('INSERT INTO tasks VALUES (?,?,?)').run(task.id, JSON.stringify(task), 1);
     return task;
   }
