@@ -195,3 +195,8 @@ input[type=checkbox], input[type=radio] { accent-color: var(--accent); }
 @media(max-width:700px){.content.wide-view{padding:24px 16px}.project-view-controls{justify-content:flex-start}.board-column{flex-basis:270px}.calendar-toolbar{gap:6px}.calendar-toolbar h2{font-size:15px;min-width:140px}.calendar-scroll{max-height:65vh}}
 
 .board-card .task-main{user-select:none}.calendar-card .calendar-task-title{user-select:none}.time-grid .calendar-cell{min-height:72px}
+
+.archive-links{display:flex;gap:10px;flex-wrap:wrap}.archive-links .count{margin-left:8px}.calendar-cell,.calendar-hour{position:relative}
+.current-time-line{position:absolute;left:0;right:0;height:1px;background:#f16b65;z-index:1;pointer-events:none}.current-day-line{height:3px}.current-day-line::before{content:"";position:absolute;left:0;top:-3px;width:9px;height:9px;border-radius:50%;background:#f16b65}
+.current-time-label{position:absolute;left:0;right:0;transform:translateY(-50%);color:#f16b65;font-weight:700;background:var(--surface-soft);font-size:12px;z-index:1;pointer-events:none}
+.archive-links .secondary{display:flex;align-items:center;gap:8px}

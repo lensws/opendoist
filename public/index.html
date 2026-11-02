@@ -11,11 +11,8 @@
     <p class="nav-label">МОИ ЗАДАЧИ</p>
     <nav aria-label="Разделы задач">
       <button data-view="inbox" class="nav-item"><span class="nav-icon">▣</span>Входящие<span class="count" id="count-inbox">0</span></button>
-      <button data-view="all" class="nav-item active"><span class="nav-icon">▤</span>Все задачи<span class="count" id="count-all">0</span></button>
       <button data-view="today" class="nav-item"><span class="nav-icon">☀</span>Сегодня<span class="count" id="count-today">0</span></button>
       <button data-view="upcoming" class="nav-item"><span class="nav-icon">▦</span>Предстоящие<span class="count" id="count-upcoming">0</span></button>
-      <button data-view="completed" class="nav-item"><span class="nav-icon">✓</span>Выполненные<span class="count" id="count-completed">0</span></button>
-      <button data-view="history" class="nav-item"><span class="nav-icon">↺</span>История</button>
     </nav>
     <div class="projects-heading"><span>ПРОЕКТЫ</span><button id="project-add" class="icon-button" aria-label="Добавить проект">＋</button></div><div id="project-list"></div>
     <div class="sidebar-bottom"><div class="local-note"><span class="online-dot"></span>Ваш сервер · ваши данные</div><button id="settings-open" class="subtle">⚙ Настройки</button><button id="logout" class="subtle">Выйти</button></div>
@@ -28,7 +25,7 @@
       <section id="project-view" aria-label="Задачи проекта" hidden></section>
       <div id="empty" class="empty" hidden><div class="empty-icon">✓</div><h2>Здесь пока спокойно</h2><p>Добавьте первую задачу.<br>Даже большой план начинается с маленького шага.</p></div>
       <button id="add-open" class="add-inline" type="button" aria-expanded="false" aria-controls="add-form"><span aria-hidden="true">＋</span> Добавить задачу</button>
-      <form id="add-form" class="composer" hidden><label for="task-input" class="sr-only">Новая задача с датой</label><div class="composer-input"><span class="plus">＋</span><div class="task-input-wrap"><div id="task-highlight" class="task-highlight" aria-hidden="true"></div><input id="task-input" maxlength="500" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="project-suggestions" placeholder="Что нужно сделать? Например, полить цветы завтра в 9"><div id="project-suggestions" class="project-suggestions" role="listbox" aria-label="Выберите проект" hidden></div></div><button id="add-submit" class="primary" type="submit" disabled>Добавить <span>↵</span></button></div><div class="composer-placement"><label class="sr-only" for="add-project">Проект новой задачи</label><select id="add-project"><option value="">Входящие</option></select><label class="sr-only" for="add-section">Раздел новой задачи</label><select id="add-section"><option value="">Без раздела</option></select></div><div id="preview" class="preview" aria-live="polite" hidden></div><button id="add-cancel" type="button" class="secondary">Отмена</button></form>
+      <form id="add-form" class="composer" hidden><label for="task-input" class="sr-only">Новая задача с датой</label><div class="composer-input"><span class="plus">＋</span><div class="task-input-wrap"><div id="task-highlight" class="task-highlight" aria-hidden="true"></div><input id="task-input" maxlength="500" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="project-suggestions" placeholder="Что нужно сделать? Например, полить цветы завтра в 9"><div id="project-suggestions" class="project-suggestions" role="listbox" aria-label="Выберите проект" hidden></div></div><button id="add-submit" class="primary" type="submit" disabled>Добавить <span id="submit-hint">↵</span></button></div><div class="composer-placement"><label class="sr-only" for="add-project">Проект новой задачи</label><select id="add-project"><option value="">Входящие</option></select><label class="sr-only" for="add-section">Раздел новой задачи</label><select id="add-section"><option value="">Без раздела</option></select></div><div id="preview" class="preview" aria-live="polite" hidden></div><button id="add-cancel" type="button" class="secondary">Отмена</button></form>
       <footer class="page-footer"><span class="spark">✦</span> Не нужно успевать всё. Начните с важного.</footer>
     </div>
   </main>
@@ -43,6 +40,10 @@
 <dialog id="settings-dialog" aria-labelledby="settings-title">
   <form id="settings-form">
     <div class="dialog-heading"><h2 id="settings-title">Настройки</h2><button type="button" data-close="settings-dialog" class="icon-button" aria-label="Закрыть">×</button></div>
+    <fieldset class="appearance-section"><legend>Добавление задачи</legend><label for="submit-shortcut">Сочетание клавиш</label><select id="submit-shortcut"><option value="enter">Enter</option><option value="ctrl-enter">Ctrl+Enter (⌘+Enter на Mac)</option></select></fieldset>
+    <fieldset class="appearance-section"><legend>Архив задач</legend><div class="archive-links">      <button data-view="completed" type="button" class="secondary"><span class="nav-icon">✓</span>Выполненные<span class="count" id="count-completed">0</span></button>
+      <button data-view="history" type="button" class="secondary"><span class="nav-icon">↺</span>История</button>
+</div></fieldset>
     <fieldset class="appearance-section"><legend>Тема оформления</legend>
       <div class="theme-options">
         <label class="theme-option"><input type="radio" name="theme" value="light"><span class="theme-symbol" aria-hidden="true">☀</span><span>Светлая</span></label>

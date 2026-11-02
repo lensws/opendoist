@@ -22,3 +22,9 @@ export function calendarTaskDate(task, timezone) {
   const value = name => parts.find(p => p.type === name).value;
   return { date: `${value('year')}-${value('month')}-${value('day')}`, time: `${value('hour')}:${value('minute')}` };
 }
+
+export function calendarClock(timezone, now = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone:timezone, year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', second:'2-digit', hourCycle:'h23' }).formatToParts(now);
+  const value = key => parts.find(p => p.type === key).value;
+  return { date:`${value('year')}-${value('month')}-${value('day')}`, time:`${value('hour')}:${value('minute')}`, hour:Number(value('hour')), fraction:(Number(value('minute')) + Number(value('second')) / 60) / 60 };
+}

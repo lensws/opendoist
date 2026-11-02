@@ -1,4 +1,4 @@
-import { calendarRange, nextAnchor, calendarTaskDate } from './calendar-model.js';
+import { calendarRange, nextAnchor, calendarTaskDate, calendarClock } from './calendar-model.js';
 const node = (tag, cls = '', text = '') => { const el = document.createElement(tag); el.className = cls; el.textContent = text; return el; };
 const button = (text, label, action, cls = 'secondary') => { const el = node('button', cls, text); el.type = 'button'; el.setAttribute('aria-label', label); el.addEventListener('click', action); return el; };
 const dateLabel = date => new Date(`${date}T12:00:00Z`).toLocaleDateString('ru', { day:'numeric', month:'long', timeZone:'UTC' });
@@ -7,6 +7,20 @@ export function initProjectViews({ api, reload, redraw, today, getTimezone, make
   const host = document.querySelector('#project-view');
   const scrollPositions = new Map();
   let currentProject = null, anchor = null, dragged = null, saving = false;
+  function updateCurrentTime() {
+    host.querySelectorAll('.current-time-line,.current-time-label').forEach(el => el.remove());
+    if (host.hidden) return;
+    const now = calendarClock(getTimezone());
+    host.querySelectorAll('[data-calendar-date]').forEach(el => el.classList.toggle('calendar-today', el.dataset.calendarDate === now.date));
+    const grid = host.querySelector('.time-grid');
+    if (!grid || ![...grid.querySelectorAll('[data-calendar-date]')].some(el => el.dataset.calendarDate === now.date)) return;
+    for (const cell of grid.querySelectorAll(`[data-hour="${now.hour}"]`)) {
+      const isLabel = cell.classList.contains('calendar-hour');
+      const line = node('div', isLabel ? 'current-time-label' : `current-time-line${cell.dataset.calendarDate === now.date ? ' current-day-line' : ''}`, isLabel ? now.time : '');
+      line.style.top = `${now.fraction * 100}%`; line.setAttribute('aria-hidden', 'true'); cell.append(line);
+    }
+  }
+  setInterval(updateCurrentTime, 30000);
   async function changeView() {
     if (!currentProject || saving) return;
     const project = currentProject; saving = true; layout.disabled = scale.disabled = true;
@@ -85,6 +99,7 @@ export function initProjectViews({ api, reload, redraw, today, getTimezone, make
     for (const date of headers) grid.append(node('div', 'calendar-day-heading', new Date(`${date}T12:00:00Z`).toLocaleDateString('ru', {weekday:'short', ...(mode === 'month' ? {} : {day:'numeric',month:'short'}), timeZone:'UTC'})));
     function cell(date, time, entries, month = false) {
       const el = node('div', `calendar-cell${date === today() ? ' calendar-today' : ''}${month && date.slice(0,7) !== anchor.slice(0,7) ? ' other-month' : ''}`);
+      el.dataset.calendarDate = date; if (time) el.dataset.hour = String(Number(time.slice(0,2)));
       el.setAttribute('aria-label', `${dateLabel(date)}${time ? ' '+time : ''}`);
       const add = button(month ? String(Number(date.slice(-2))) : '＋', `Добавить задачу ${date}${time ? ' в '+time : ''}`, () => addTask({ projectId:currentProject.id, date, time }), 'calendar-add');
       el.append(add);
@@ -98,7 +113,7 @@ export function initProjectViews({ api, reload, redraw, today, getTimezone, make
       grid.append(node('div','calendar-hour','Весь день'));
       for (const date of dates) grid.append(cell(date, null, projected.filter(e => e.date.date === date && !e.date.time)));
       for (let hour=0; hour<24; hour++) {
-        const time = `${String(hour).padStart(2,'0')}:00`; grid.append(node('div','calendar-hour',time));
+        const time = `${String(hour).padStart(2,'0')}:00`; const hourLabel = node('div','calendar-hour',time); hourLabel.dataset.hour = String(hour); grid.append(hourLabel);
         for (const date of dates) grid.append(cell(date, time, projected.filter(e => e.date.date === date && Number(e.date.time?.slice(0,2)) === hour)));
       }
     }
@@ -106,7 +121,8 @@ export function initProjectViews({ api, reload, redraw, today, getTimezone, make
     const scrollKey = `${currentProject.id}:${mode}:${dates[0]}`;
     const restoreScroll = scrollPositions.get(scrollKey);
     if (restoreScroll !== undefined) wrap.scrollTop = restoreScroll;
-    else if (mode !== 'month') { const firstHour = grid.querySelectorAll('.calendar-hour')[9]; if (firstHour) wrap.scrollTop = firstHour.offsetTop - grid.offsetTop - 40; }
+    else if (mode !== 'month') { const now = calendarClock(timezone); const firstHour = grid.querySelectorAll('.calendar-hour')[dates.includes(now.date) ? Math.max(1, now.hour) : 9]; if (firstHour) wrap.scrollTop = firstHour.offsetTop - grid.offsetTop - 40; }
+    updateCurrentTime();
     wrap.addEventListener('scroll', () => { if (scrollPositions.size > 30) scrollPositions.delete(scrollPositions.keys().next().value); scrollPositions.set(scrollKey, wrap.scrollTop); });
     const unscheduled = node('section', 'calendar-unscheduled'); unscheduled.setAttribute('aria-label','Задачи без срока');
     const pending = tasks.filter(t => !t.due); unscheduled.append(node('h2','board-heading',`Без срока · ${pending.length}`));

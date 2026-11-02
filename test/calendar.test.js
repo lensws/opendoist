@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { calendarRange, nextAnchor, calendarTaskDate } from '../public/calendar-model.js';
+import { calendarRange, nextAnchor, calendarTaskDate, calendarClock } from '../public/calendar-model.js';
 import { rescheduleTask } from '../server/calendar.js';
 import { parseTask, nextAfterCompletion } from '../src/index.js';
 test('calendar grids handle leap years, Monday starts and month boundaries', () => {
@@ -30,4 +30,10 @@ test('rescheduling validates dates, DST gaps, completion and removing dates', ()
   assert.throws(() => rescheduleTask({completedAt:'2026-11-01'}, {date:'2026-11-02'}), /Выполненную/);
   assert.equal(rescheduleTask({}, {date:'2026-11-02',time:null}).due.instant,null);
   assert.equal(rescheduleTask({due:{}}, {date:null}).status,'unscheduled');
+});
+
+test('current-time line uses calendar timezone and fractional hour across midnight', () => {
+  const clock = calendarClock('Europe/Moscow', new Date('2026-11-02T21:30:30Z'));
+  assert.equal(clock.date,'2026-11-03'); assert.equal(clock.time,'00:30'); assert.equal(clock.hour,0); assert.equal(clock.fraction,30.5/60);
+  assert.equal(calendarClock('America/New_York', new Date('2026-11-02T21:30:30Z')).time,'16:30');
 });

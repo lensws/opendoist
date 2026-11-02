@@ -91,15 +91,16 @@ export class Store {
   }
   settings() {
     const row = this.db.prepare('SELECT data FROM settings WHERE id=1').get();
-    return row ? JSON.parse(row.data) : { theme: 'system', accent: '#c95736', timezone: 'Europe/Moscow', language: 'auto' };
+    return row ? { submitShortcut: 'enter', ...JSON.parse(row.data) } : { submitShortcut: 'enter', theme: 'system', accent: '#c95736', timezone: 'Europe/Moscow', language: 'auto' };
   }
   saveSettings(patch) {
-    const allowed = ['theme', 'accent', 'timezone', 'language'];
+    const allowed = ['theme', 'accent', 'timezone', 'language', 'submitShortcut'];
     if (Object.keys(patch).some(key => !allowed.includes(key))) throw new AppError(400, 'Неизвестная настройка');
     const next = { ...this.settings(), ...patch };
     if (!['light', 'dark', 'system'].includes(next.theme) || !['auto', 'ru', 'en'].includes(next.language) || typeof next.accent !== 'string' || !/^#[0-9a-f]{6}$/i.test(next.accent)) throw new AppError(400, 'Некорректные настройки оформления или языка');
     if (typeof next.timezone !== 'string' || !next.timezone.trim() || next.timezone.length > 100) throw new AppError(400, 'Некорректный часовой пояс');
     try { new Intl.DateTimeFormat('ru', { timeZone: next.timezone }); } catch { throw new AppError(400, 'Некорректный часовой пояс'); }
+    if (!['enter', 'ctrl-enter'].includes(next.submitShortcut)) throw new AppError(400, 'Выберите Enter или Ctrl+Enter');
     next.accent = next.accent.toLowerCase();
     this.db.prepare('INSERT INTO settings (id,data) VALUES (1,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data').run(JSON.stringify(next));
     return next;

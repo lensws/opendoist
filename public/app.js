@@ -1,10 +1,11 @@
+import { matchesSubmitShortcut } from './submit-shortcut.js';
 import { initProjectViews } from './project-views.js';
 import { initTaskInput } from './task-input.js';
 import { initProjects } from './projects.js';
 import { initTransfer } from './transfer.js';
 import { initNotifications } from './notifications.js';
 const $ = selector => document.querySelector(selector);
-let tasks = [], history = [], projects = [], sections = [], view = 'all', preview = null, editTask = null, previewSequence = 0, timer, toastTimer;
+let tasks = [], history = [], projects = [], sections = [], view = 'inbox', preview = null, editTask = null, previewSequence = 0, timer, toastTimer;
 let composerOpen = false;
 let settings;
 try { settings = JSON.parse(localStorage.getItem('opendoist.settings')) || {}; } catch { settings = {}; }
@@ -73,7 +74,8 @@ function render() {
   document.querySelectorAll('[data-view]').forEach(el => { const active = el.dataset.view === view; el.classList.toggle('active', active); if (active) el.setAttribute('aria-current', 'page'); else el.removeAttribute('aria-current'); });
   const active = tasks.filter(t => !t.completedAt);
   const filters = { inbox: active.filter(t => !t.projectId), all: active, today: active.filter(t => t.due && t.due.date <= today(t.due.timezone)), upcoming: active.filter(t => t.due && t.due.date > today(t.due.timezone)), completed: tasks.filter(t => t.completedAt) };
-  for (const key of Object.keys(filters)) $(`#count-${key}`).textContent = filters[key].length;
+  for (const key of Object.keys(filters)) { const counter = $(`#count-${key}`); if (counter) counter.textContent = filters[key].length; }
+  $('#submit-hint').textContent = settings.submitShortcut === 'ctrl-enter' ? 'Ctrl/⌘ ↵' : '↵';
   const query = $('#search').value.trim().toLocaleLowerCase();
   const list = $('#task-list'); list.replaceChildren();
   $('#empty h2').textContent = query ? 'Ничего не найдено' : view === 'today' ? 'На сегодня всё' : view === 'completed' ? 'Первые победы впереди' : view === 'history' ? 'История пока пуста' : 'Здесь пока спокойно';
@@ -144,13 +146,19 @@ async function refreshPreview() {
   } catch (e) { if (sequence === previewSequence) { el.className = 'preview error'; el.textContent = e.message; } }
 }
 $('#task-input').addEventListener('input', () => { previewSequence++; preview = null; $('#add-submit').disabled = true; clearTimeout(timer); timer = setTimeout(refreshPreview, 250); });
+$('#task-input').addEventListener('keydown', event => {
+  if (event.key !== 'Enter' || event.defaultPrevented || event.isComposing) return;
+  const submit = matchesSubmitShortcut(event, settings.submitShortcut);
+  event.preventDefault();
+  if (submit && !$('#add-submit').disabled) $('#add-form').requestSubmit($('#add-submit'));
+});
 $('#add-form').addEventListener('submit', async event => {
   event.preventDefault(); if (!preview || preview.source !== $('#task-input').value.trim()) return;
   $('#add-submit').disabled = true;
   try { await api('/tasks', { method: 'POST', body: { source: preview.source, reference: preview.reference, ...settings, ...projectUI.placement('add') } }); $('#task-input').value = ''; await refreshPreview(); composerOpen = false; await load(); $('#add-open').focus(); notify('Задача добавлена'); }
   catch (e) { $('#page-error').textContent = e.message; $('#add-submit').disabled = false; }
 });
-document.querySelectorAll('[data-view]').forEach(el => el.addEventListener('click', async () => { view = el.dataset.view; try { await load(); } catch (e) { $('#page-error').textContent = e.message; } }));
+document.querySelectorAll('[data-view]').forEach(el => el.addEventListener('click', async () => { view = el.dataset.view; if ($('#settings-dialog').open) $('#settings-dialog').close(); try { await load(); } catch (e) { $('#page-error').textContent = e.message; } }));
 $('#search').addEventListener('input', render);
 function syncComposer() {
   const unavailable = ['completed', 'history'].includes(view);
@@ -158,7 +166,7 @@ function syncComposer() {
   $('#add-open').hidden = unavailable || composerOpen;
   $('#add-open').setAttribute('aria-expanded', String(composerOpen && !unavailable));
 }
-function focusAdd() { if (['completed', 'history'].includes(view)) { view = 'all'; render(); } composerOpen = true; syncComposer(); $('#task-input').focus(); }
+function focusAdd() { if (['completed', 'history'].includes(view)) { view = 'inbox'; render(); } composerOpen = true; syncComposer(); $('#task-input').focus(); }
 function addInView({ projectId, sectionId = null, date = null, time = null }) {
   if ($('#task-input').value.trim()) { focusAdd(); notify('В форме есть черновик. Добавьте его или очистите текст.'); return; }
   projectUI.fillPlacement('add', projectId, sectionId); focusAdd();
@@ -199,6 +207,7 @@ function previewAppearance() {
   document.querySelectorAll('[data-accent]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.accent === draft.accent)));
 }
 $('#settings-open').addEventListener('click', () => {
+  $('#submit-shortcut').value = settings.submitShortcut || 'enter';
   $('#timezone').value = settings.timezone; $('#language').value = settings.language;
   document.querySelectorAll('input[name="theme"]').forEach(input => { input.checked = input.value === settings.theme; });
   $('#accent-color').value = settings.accent;
@@ -212,7 +221,7 @@ $('#settings-dialog').addEventListener('close', () => window.OpenDoistAppearance
 $('#settings-form').addEventListener('submit', async event => {
   event.preventDefault(); const timezone = $('#timezone').value.trim();
   try { new Intl.DateTimeFormat('ru', { timeZone: timezone }); } catch { $('#settings-error').textContent = 'Укажите часовой пояс, например Europe/Moscow'; return; }
-  const next = { ...settings, timezone, language: $('#language').value, ...appearanceDraft() };
+  const next = { ...settings, submitShortcut: $('#submit-shortcut').value, timezone, language: $('#language').value, ...appearanceDraft() };
   const button = event.submitter; button.disabled = true;
   try {
     settings = (await api('/settings', { method: 'PATCH', body: next })).settings;
