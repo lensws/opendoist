@@ -1,3 +1,4 @@
+import { initTransfer } from './transfer.js';
 import { initNotifications } from './notifications.js';
 const $ = selector => document.querySelector(selector);
 let tasks = [], history = [], view = 'all', preview = null, editTask = null, previewSequence = 0, timer, toastTimer;
@@ -12,6 +13,7 @@ async function api(path, { method = 'GET', body } = {}) {
   if (!response.ok) { if (response.status === 401 && path !== '/login') showLogin(); const error = new Error(data.error || 'Не удалось выполнить запрос'); error.status = response.status; throw error; }
   return data;
 }
+initTransfer({ api, reload: async () => { tasks = (await api('/tasks')).tasks; if (view === 'history') history = (await api('/history')).history; render(); }, notify });
 const { openReminders } = initNotifications({ api, reload: load, getSettings: () => settings, notify });
 function node(tag, className, text) { const el = document.createElement(tag); if (className) el.className = className; if (text !== undefined) el.textContent = text; return el; }
 function today(zone = settings.timezone) { return new Intl.DateTimeFormat('en-CA', { timeZone: zone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date()); }

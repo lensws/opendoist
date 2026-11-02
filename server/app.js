@@ -2,16 +2,17 @@ import { createServer } from 'node:http';
 import { readFileSync } from 'node:fs';
 import { randomBytes, scryptSync, timingSafeEqual, createHmac } from 'node:crypto';
 import { parseTask, occurrences } from '../src/index.js';
+import { validateImport, IMPORT_LIMIT } from './import.js';
 import { Store, AppError } from './store.js';
 import { NotificationWorker, publicConfig, validateConfig, makeReminder } from './notifications.js';
 
-const assets = new Map(['index.html', 'app.js', 'style.css', 'icon.svg', 'appearance.js', 'notifications.js'].map(name => [name, readFileSync(new URL(`../public/${name}`, import.meta.url))]));
+const assets = new Map(['index.html', 'app.js', 'style.css', 'icon.svg', 'appearance.js', 'notifications.js', 'transfer.js'].map(name => [name, readFileSync(new URL(`../public/${name}`, import.meta.url))]));
 const mime = { html: 'text/html; charset=utf-8', js: 'text/javascript; charset=utf-8', css: 'text/css; charset=utf-8', svg: 'image/svg+xml' };
 const SESSION_AGE = 7 * 86400 * 1000;
-async function readJSON(req) {
+async function readJSON(req, limit = 16384) {
   if (!/^application\/json(?:;|$)/i.test(req.headers['content-type'] || '')) throw new AppError(415, 'Ожидается JSON');
   let size = 0; const chunks = [];
-  for await (const chunk of req) { size += chunk.length; if (size > 16384) throw new AppError(413, 'Слишком большой запрос'); chunks.push(chunk); }
+  for await (const chunk of req) { size += chunk.length; if (size > limit) throw new AppError(413, 'Слишком большой запрос'); chunks.push(chunk); }
   try { const body = JSON.parse(Buffer.concat(chunks).toString()); if (!body || Array.isArray(body) || typeof body !== 'object') throw Error(); return body; }
   catch { throw new AppError(400, 'Некорректный JSON'); }
 }
@@ -98,6 +99,10 @@ export function createApp({ password, database = './data/opendoist.sqlite', publ
       if (path === '/api/settings' && method === 'PATCH') return send(200, { settings: store.saveSettings(await readJSON(req)) });
       if (path === '/api/tasks' && method === 'GET') return send(200, { tasks: store.list() });
       if (path === '/api/history' && method === 'GET') return send(200, { history: store.history() });
+      if (['/api/import', '/api/import/preview'].includes(path) && method === 'POST') {
+        const document = validateImport(await readJSON(req, IMPORT_LIMIT));
+        return send(200, store.importTasks(document, path.endsWith('/preview')));
+      }
       if (path === '/api/export' && method === 'GET') return send(200, { version: 1, exportedAt: new Date().toISOString(), tasks: store.list(), history: store.history() }, { 'Content-Disposition': 'attachment; filename="opendoist-export.json"' });
       if (path === '/api/parse' && method === 'POST') {
         const preview = parse(await readJSON(req));

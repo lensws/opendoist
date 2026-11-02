@@ -51,6 +51,29 @@ export class Store {
   notificationStatus() {
     return this.db.prepare('SELECT channel,status,attempts,scheduled,sent_at,last_error FROM notification_outbox ORDER BY scheduled DESC LIMIT 20').all();
   }
+  importTasks(document, preview = false) {
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      const exists = this.db.prepare('SELECT 1 FROM tasks WHERE id=?');
+      const fresh = document.tasks.filter(task => !exists.get(task.id));
+      const ids = new Set(fresh.map(task => task.id));
+      const history = document.history.filter(item => ids.has(item.task.id));
+      const result = { added: fresh.length, skipped: document.tasks.length - fresh.length, history: history.length };
+      if (!preview) {
+        const reminderIds = new Map(), importedAt = Date.now();
+        const prepare = task => ({ ...task, reminders: task.reminders.map(r => {
+          const key = `${task.id}:${r.id}`;
+          if (!reminderIds.has(key)) reminderIds.set(key, randomUUID());
+          return { ...r, id: reminderIds.get(key), createdAt: Math.max(r.createdAt, importedAt) };
+        }) });
+        const insert = this.db.prepare('INSERT INTO tasks (id,data,revision) VALUES (?,?,?)');
+        for (const task of fresh) insert.run(task.id, JSON.stringify(prepare(task)), task.revision);
+        const insertHistory = this.db.prepare('INSERT INTO completions (id,task_id,completed_at,snapshot) VALUES (?,?,?,?)');
+        for (const item of history) insertHistory.run(randomUUID(), item.task.id, item.completedAt, JSON.stringify(prepare(item.task)));
+      }
+      this.db.exec('COMMIT'); return result;
+    } catch (error) { this.db.exec('ROLLBACK'); throw error; }
+  }
   close() { this.db.close(); }
   list() { return this.db.prepare('SELECT data FROM tasks').all().map(r => JSON.parse(r.data)).sort((a, b) => b.createdAt.localeCompare(a.createdAt)); }
   get(id) { const row = this.db.prepare('SELECT data FROM tasks WHERE id=?').get(id); if (!row) throw new AppError(404, 'Задача не найдена'); return JSON.parse(row.data); }

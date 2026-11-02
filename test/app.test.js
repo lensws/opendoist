@@ -143,3 +143,75 @@ test('notification API protects credentials and reminder mutations with session,
   assert.equal(removed.data.task.reminders.length, 0);
   assert.doesNotMatch(JSON.stringify((await app.request('/api/export')).data), /aaaaaaaaaa/);
 });
+
+test('export import previews and restores tasks, recurrence, reminders and history without changing existing tasks', async t => {
+  const source = await start(), target = await start(); t.after(() => source.close()); t.after(() => target.close());
+  await source.login(); await target.login();
+  await source.request('/api/notifications', { telegram: { enabled: true, token: '12345:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', chatId: '123456' } }, 'PATCH');
+  let recurring = (await source.request('/api/tasks', { source: 'Полив каждый день в 10' })).data.task;
+  recurring = (await source.request(`/api/tasks/${recurring.id}/reminders`, { revision: recurring.revision, kind: 'absolute', local: '2099-01-01T10:00', timezone: 'Europe/Moscow', channels: ['telegram'] })).data.task;
+  await source.request(`/api/tasks/${recurring.id}/complete`, { revision: recurring.revision });
+  let done = (await source.request('/api/tasks', { source: 'Прочитать книгу' })).data.task;
+  await source.request(`/api/tasks/${done.id}/complete`, { revision: done.revision });
+  const backup = (await source.request('/api/export')).data;
+  const preview = await target.request('/api/import/preview', backup);
+  assert.deepEqual(preview.data, { added: 2, skipped: 0, history: 2 });
+  assert.equal(target.store.list().length, 0);
+  assert.deepEqual((await target.request('/api/import', backup)).data, preview.data);
+  for (const original of backup.tasks) {
+    const imported = target.store.get(original.id);
+    for (const key of ['title', 'due', 'recurrence', 'completedAt', 'revision', 'createdAt']) assert.deepEqual(imported[key], original[key]);
+  }
+  const restored = target.store.get(recurring.id);
+  assert.notEqual(restored.reminders[0].id, recurring.reminders[0].id);
+  assert.ok(restored.reminders[0].createdAt >= recurring.reminders[0].createdAt);
+  assert.equal(target.store.history().length, 2);
+  assert.equal(target.store.notificationConfig(), null);
+  assert.equal(target.store.db.prepare('SELECT count(*) AS count FROM notification_outbox').get().count, 0);
+  await target.request(`/api/tasks/${restored.id}`, { revision: restored.revision, title: 'Изменено после импорта' }, 'PATCH');
+  assert.deepEqual((await target.request('/api/import', backup)).data, { added: 0, skipped: 2, history: 0 });
+  assert.equal(target.store.get(restored.id).title, 'Изменено после импорта');
+  assert.equal(target.store.history().length, 2);
+  const doneRestored = target.store.get(done.id);
+  const undone = await target.request(`/api/tasks/${done.id}/undo`, { revision: doneRestored.revision });
+  assert.equal(undone.response.status, 200); assert.equal(undone.data.task.completedAt, null);
+});
+
+test('import rejects malformed schedules atomically, requires authentication and checks Origin', async t => {
+  const app = await start(); t.after(() => app.close());
+  const empty = { version: 1, tasks: [], history: [] };
+  assert.equal((await app.request('/api/import', empty)).response.status, 401);
+  assert.equal((await app.request('/api/import/preview', empty)).response.status, 401);
+  await app.login();
+  const task = (await app.request('/api/tasks', { source: 'Задача завтра в 10' })).data.task;
+  const original = { ...task, id: '11111111-1111-4111-8111-111111111111' };
+  const invalids = [
+    { ...empty, version: 2 },
+    { ...empty, tasks: [original, original] },
+    { ...empty, tasks: [original, { ...original, id: 'bad' }] },
+    { ...empty, tasks: [{ ...original, due: { ...original.due, timezone: 'No/Zone' } }] },
+    { ...empty, tasks: [{ ...original, due: { ...original.due, date: '2030-02-31' } }] },
+    { ...empty, tasks: [{ ...original, recurrence: { mode: 'calendar' } }] },
+    { ...empty, tasks: [{ ...original, reminders: [{ kind: 'invalid' }] }] },
+    { ...empty, history: [{ completedAt: new Date().toISOString(), task: original }] },
+  ];
+  for (const input of invalids) {
+    assert.equal((await app.request('/api/import', input)).response.status, 400);
+    assert.equal(app.store.list().length, 1);
+  }
+  assert.equal((await app.request('/api/import', empty, 'POST', { Origin: 'https://evil.example' })).response.status, 403);
+  assert.equal((await app.request('/api/import', { ...empty, padding: 'x'.repeat(10 * 1024 * 1024) })).response.status, 413);
+});
+
+test('import accepts exports over the ordinary request limit and rolls back storage failures', async t => {
+  const app = await start(); t.after(() => app.close()); await app.login();
+  const original = (await app.request('/api/tasks', { source: 'Task every 3rd Friday at 10am' })).data.task;
+  const document = { version: 1, tasks: Array.from({ length: 60 }, (_, i) => ({ ...original, id: `11111111-1111-4111-8111-${String(i).padStart(12, '0')}` })), history: [] };
+  assert.ok(JSON.stringify(document).length > 16384);
+  assert.equal((await app.request('/api/import/preview', document)).data.added, 60);
+  app.store.db.exec("CREATE TRIGGER reject_import BEFORE INSERT ON tasks WHEN NEW.id='11111111-1111-4111-8111-000000000001' BEGIN SELECT RAISE(ABORT, 'test failure'); END;");
+  assert.equal((await app.request('/api/import', document)).response.status, 500); assert.equal(app.store.list().length, 1);
+  app.store.db.exec('DROP TRIGGER reject_import');
+  assert.equal((await app.request('/api/import', document)).data.added, 60);
+  assert.equal(app.store.list().length, 61);
+});

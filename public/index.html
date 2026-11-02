@@ -7,6 +7,7 @@
 <div id="workspace" class="workspace" hidden>
   <aside class="sidebar"><a class="brand" href="/"><span class="brand-mark" aria-hidden="true">✓</span>OpenDoist<span class="beta">SELF-HOSTED</span></a>
     <button id="focus-add" class="add-shortcut"><span>＋</span> Добавить задачу <kbd>N</kbd></button>
+    <label class="search sidebar-search"><span>⌕</span><input id="search" type="search" placeholder="Найти задачу" aria-label="Поиск задач"></label>
     <p class="nav-label">МОИ ЗАДАЧИ</p>
     <nav aria-label="Разделы задач">
       <button data-view="all" class="nav-item active"><span class="nav-icon">▤</span>Все задачи<span class="count" id="count-all">0</span></button>
@@ -15,14 +16,14 @@
       <button data-view="completed" class="nav-item"><span class="nav-icon">✓</span>Выполненные<span class="count" id="count-completed">0</span></button>
       <button data-view="history" class="nav-item"><span class="nav-icon">↺</span>История</button>
     </nav>
-    <div class="sidebar-bottom"><div class="local-note"><span class="online-dot"></span>Ваш сервер · ваши данные</div><button id="settings-open" class="subtle">⚙ Настройки</button><a class="subtle export" href="/api/export" download>↓ Экспорт задач</a><button id="logout" class="subtle">Выйти</button></div>
+    <div class="sidebar-bottom"><div class="local-note"><span class="online-dot"></span>Ваш сервер · ваши данные</div><button id="settings-open" class="subtle">⚙ Настройки</button><button id="logout" class="subtle">Выйти</button></div>
   </aside>
   <main>
     <header class="topbar"><span id="today-label"></span><span class="topbar-note">Место для того, что важно.</span></header>
     <div class="content"><div class="page-heading"><div><p class="eyebrow">ШАГ ЗА ШАГОМ</p><h1 id="view-title">Все задачи</h1><p id="view-description" class="muted">Запишите, чтобы больше не держать в голове.</p></div><div class="progress-mark" aria-hidden="true">✓</div></div>
       <form id="add-form" class="composer"><label for="task-input" class="sr-only">Новая задача с датой</label><div class="composer-input"><span class="plus">＋</span><input id="task-input" maxlength="500" autocomplete="off" placeholder="Что нужно сделать? Например, полить цветы завтра в 9"><button id="add-submit" class="primary" type="submit" disabled>Добавить <span>↵</span></button></div><div id="preview" class="preview" aria-live="polite"><span class="spark">✦</span> Пишите как думаете — дату и повторение распознаем сами.</div></form>
       <div id="examples" class="examples"><span>Попробуйте</span><button type="button" data-example="Полить цветы каждые 3 дня">каждые 3 дня</button><button type="button" data-example="Отправить отчёт следующая пятница">следующая пятница</button><button type="button" data-example="Read a book tomorrow at 7pm">tomorrow at 7pm</button></div>
-      <div class="list-toolbar"><span id="task-summary">Загрузка…</span><label class="search"><span>⌕</span><input id="search" type="search" placeholder="Найти задачу" aria-label="Поиск задач"></label></div>
+      <div class="list-toolbar"><span id="task-summary">Загрузка…</span></div>
       <p id="page-error" class="error" role="alert"></p><section id="task-list" aria-label="Список задач"></section>
       <div id="empty" class="empty" hidden><div class="empty-icon">✓</div><h2>Здесь пока спокойно</h2><p>Добавьте первую задачу.<br>Даже большой план начинается с маленького шага.</p></div>
       <footer class="page-footer"><span class="spark">✦</span> Не нужно успевать всё. Начните с важного.</footer>
@@ -53,6 +54,14 @@
       </div>
       <p class="muted small">Изменения видны сразу. Нажмите «Сохранить», чтобы оставить их.</p>
     </fieldset>
+    <details class="channel-section task-transfer"><summary>Импорт и экспорт задач</summary>
+      <p class="muted small">Сохраните задачи в JSON или перенесите их из экспорта OpenDoist.</p>
+      <a class="secondary export-button" href="/api/export" download>↓ Экспорт задач</a>
+      <label for="import-file">Импорт задач из JSON</label><input id="import-file" type="file" accept=".json,application/json">
+      <p class="muted small">До 10 МБ и 10 000 задач. Существующие задачи не изменятся; совпадающие ID будут пропущены. Сроки, повторения и история сохраняются. Прошедшие напоминания не отправляются заново.</p>
+      <p id="import-preview" class="small" role="status"></p><p id="import-error" class="error" role="alert"></p>
+      <button id="import-submit" type="button" class="primary" disabled>Импортировать задачи</button>
+    </details>
     <div class="settings-divider"></div>
     <button type="button" id="notifications-open" class="secondary settings-link">🔔 Уведомления и сводка дня →</button>
     <label for="timezone">Часовой пояс новых задач</label><input id="timezone" list="timezones" required><datalist id="timezones"><option value="Europe/Moscow"><option value="Europe/Berlin"><option value="Asia/Dubai"><option value="Asia/Tbilisi"><option value="America/New_York"><option value="UTC"></datalist>

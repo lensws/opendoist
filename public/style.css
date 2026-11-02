@@ -128,3 +128,12 @@ input[type=checkbox], input[type=radio] { accent-color: var(--accent); }
 .reminder-row .small { margin-top: 4px; }
 .reminder-action { width: auto; height: auto; min-height: 27px; font-size: 12px; white-space: nowrap; padding: 6px 8px; }
 @media(max-width: 480px) { .form-grid, .form-grid.digest-grid { grid-template-columns: minmax(0, 1fr); gap: 0; } .task-actions { flex-wrap: wrap; } .reminder-action { font-size: 11px; } }
+
+.sidebar-search { margin: 2px 0 22px; padding: 7px 10px; border: 1px solid var(--border); border-radius: 8px; color: var(--muted); background: var(--surface); }
+.sidebar-search input { min-width: 0; width: 100%; font-size: 13px; color: var(--text); }
+.sidebar-search:focus-within { outline: 2px solid var(--accent-ink); outline-offset: 2px; }
+.export-button { display: inline-block; text-decoration: none; margin: 6px 0; font-size: 13px; }
+#settings-dialog #import-file { padding: 10px; max-width: 100%; font-size: 12px; }
+#import-file::file-selector-button { border: 1px solid var(--border); border-radius: 5px; background: var(--surface-soft); color: var(--text); padding: 6px 8px; margin-right: 8px; cursor: pointer; }
+.task-transfer summary { font-weight: 650; }
+@media(max-width:700px) { .sidebar-search { margin: 12px 0; width: 100%; } }
