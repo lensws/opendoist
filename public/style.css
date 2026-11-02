@@ -165,3 +165,12 @@ input[type=checkbox], input[type=radio] { accent-color: var(--accent); }
 
 .add-inline{display:flex;align-items:center;gap:12px;border:0;background:transparent;color:var(--muted);padding:14px 0;font-size:14px}.add-inline span{color:var(--accent-ink);font-size:24px}.add-inline:hover{color:var(--accent-ink)}
 #add-form{margin-top:14px}#add-cancel{margin:10px 14px}.project-row .project-move{width:21px;flex-shrink:0;font-size:14px}.project-move:disabled{cursor:default;opacity:.2}
+
+.task-input-wrap{position:relative;flex:1;min-width:0}.composer .task-input-wrap input{position:relative;width:100%;display:block;z-index:1;font-size:13px;line-height:20px;padding:8px 2px;letter-spacing:normal}
+.task-highlight{position:absolute;inset:0;overflow:hidden;white-space:pre;pointer-events:none;font:inherit;font-size:13px;line-height:20px;padding:8px 2px;color:transparent;letter-spacing:normal}
+.task-highlight mark{color:transparent;background:var(--accent-soft);outline:1px solid var(--accent-ink);border-radius:4px}
+.project-suggestions{position:absolute;top:100%;left:0;min-width:220px;max-width:100%;max-height:240px;overflow:auto;z-index:20;background:var(--surface);color:var(--text);border:1px solid var(--line);border-radius:8px;box-shadow:0 6px 20px #0003;padding:4px}
+.project-option,.suggestion-empty{padding:10px 12px;font-size:13px;overflow-wrap:anywhere}.project-option{cursor:pointer;border-radius:5px}.project-option:hover,.project-option[aria-selected=true]{background:var(--accent-soft)}
+@media(max-width:700px){.task-input-wrap{flex-basis:80%}.composer .task-input-wrap input,.task-highlight{font-size:12px}}
+
+#add-form{overflow:visible}

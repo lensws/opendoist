@@ -1,3 +1,4 @@
+import { initTaskInput } from './task-input.js';
 import { initProjects } from './projects.js';
 import { initTransfer } from './transfer.js';
 import { initNotifications } from './notifications.js';
@@ -16,6 +17,7 @@ async function api(path, { method = 'GET', body } = {}) {
   return data;
 }
 const projectUI = initProjects({ api, getData: () => ({ projects, sections, tasks }), reload: load, selectView: next => { view = next; render(); }, notify });
+const taskInput = initTaskInput({ getProjects: () => projects, chooseProject: id => projectUI.fillPlacement('add', id, '') });
 initTransfer({ api, reload: async () => { ({ projects, sections } = await api('/projects')); tasks = (await api('/tasks')).tasks; if (view === 'history') history = (await api('/history')).history; render(); }, notify });
 const { openReminders } = initNotifications({ api, reload: load, getSettings: () => settings, notify });
 function node(tag, className, text) { const el = document.createElement(tag); if (className) el.className = className; if (text !== undefined) el.textContent = text; return el; }
@@ -120,11 +122,12 @@ async function refreshPreview() {
   const source = $('#task-input').value.trim(); const el = $('#preview');
   el.className = 'preview';
   el.hidden = !source;
-  if (!source) { el.textContent = ''; return; }
+  if (!source) { el.textContent = ''; taskInput.highlight(); return; }
   el.textContent = 'Распознаём дату…';
   try {
     const result = await api('/parse', { method: 'POST', body: { source, ...settings } });
     if (sequence !== previewSequence) return;
+    taskInput.highlight(source, result.parsed.status === 'needs_review' ? [] : result.parsed.spans);
     preview = { ...result, source }; el.textContent = previewText(result);
     const valid = result.parsed.status !== 'needs_review' && !!result.parsed.title;
     el.className = `preview ${valid ? 'ready' : 'error'}`; $('#add-submit').disabled = !valid;
@@ -146,7 +149,7 @@ function syncComposer() {
   $('#add-open').setAttribute('aria-expanded', String(composerOpen && !unavailable));
 }
 function focusAdd() { if (['completed', 'history'].includes(view)) { view = 'all'; render(); } composerOpen = true; syncComposer(); $('#task-input').focus(); }
-function closeComposer() { composerOpen = false; syncComposer(); $('#add-open').focus(); }
+function closeComposer() { taskInput.hide(); composerOpen = false; syncComposer(); $('#add-open').focus(); }
 $('#add-open').addEventListener('click', focusAdd);
 $('#add-cancel').addEventListener('click', closeComposer);
 $('#add-form').addEventListener('keydown', event => { if (event.key === 'Escape') { event.preventDefault(); closeComposer(); } });
