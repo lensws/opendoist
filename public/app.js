@@ -1,3 +1,4 @@
+import { fetchWorkspace } from './workspace-data.js';
 import { orderedTree, compareTasks } from './task-tree.js';
 import { markdown } from './markdown.js';
 import { initTaskDetails } from './task-details.js';
@@ -27,10 +28,18 @@ const taskDetails = initTaskDetails({api, getTasks:() => tasks, reload:load, not
 const projectUI = initProjects({ api, getData: () => ({ projects, sections, tasks }), reload: load, selectView: next => { view = next; render(); }, notify });
 const taskInput = initTaskInput({ getProjects: () => projects, chooseProject: id => projectUI.fillPlacement('add', id, '') });
 const projectViews = initProjectViews({ api, reload:load, redraw:render, today:() => today(), getTimezone:() => settings.timezone, makeTaskRow, addTask:addInView, editTask:openEdit, completeTask, notify });
-initTransfer({ api, reload: async () => { ({ projects, sections } = await api('/projects')); tasks = (await api('/tasks')).tasks; if (view === 'history') history = (await api('/history')).history; render(); }, notify });
+initTransfer({ api, reload: load, notify });
 const { openReminders } = initNotifications({ api, reload: load, getSettings: () => settings, notify });
 function node(tag, className, text) { const el = document.createElement(tag); if (className) el.className = className; if (text !== undefined) el.textContent = text; return el; }
-function today(zone = settings.timezone) { return new Intl.DateTimeFormat('en-CA', { timeZone: zone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date()); }
+const todayCache = new Map();
+function today(zone = settings.timezone) {
+  if (!todayCache.has(zone)) {
+    // Share the date during synchronous rendering, but never across midnight.
+    queueMicrotask(() => todayCache.clear());
+    todayCache.set(zone, new Intl.DateTimeFormat('en-CA', { timeZone: zone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date()));
+  }
+  return todayCache.get(zone);
+}
 function dateLabel(due) {
   if (!due) return 'Без срока';
   const current = today(due.timezone);
@@ -44,18 +53,17 @@ function recurringLabel(task) {
   const spans = task.spans?.filter(s => s.kind === 'recurrence' || s.kind === 'mode');
   return spans?.length ? spans.map(s => s.text).join(' ') : 'Повторяется';
 }
-function showLogin() { $('#workspace').hidden = true; $('#login-screen').hidden = false; tasks = []; history = []; $('#task-list').replaceChildren(); for (const dialog of document.querySelectorAll('dialog[open]')) dialog.close(); }
-async function loadSettings() {
-  settings = (await api('/settings')).settings;
-  window.OpenDoistAppearance.apply(settings);
-  // Optional first-paint cache; the server remains the source of truth.
-  try { localStorage.setItem('opendoist.settings', JSON.stringify(settings)); } catch { /* Storage is optional. */ }
-}
+function showLogin() { loadSequence++; $('#workspace').hidden = true; $('#login-screen').hidden = false; tasks = []; history = []; $('#task-list').replaceChildren(); for (const dialog of document.querySelectorAll('dialog[open]')) dialog.close(); }
+let loadSequence = 0;
 async function load() {
-  await loadSettings();
-  const result = await api('/tasks'); tasks = result.tasks;
-  ({ projects, sections } = await api('/projects'));
-  if (view === 'history') history = (await api('/history')).history;
+  const sequence = ++loadSequence;
+  const data = await fetchWorkspace(api, view === 'history');
+  // A slower, older refresh must not overwrite a newer snapshot.
+  if (sequence !== loadSequence) return;
+  ({ settings, tasks, projects, sections } = data);
+  if (data.history) history = data.history;
+  window.OpenDoistAppearance.apply(settings);
+  try { localStorage.setItem('opendoist.settings', JSON.stringify(settings)); } catch { /* Storage is optional. */ }
   render();
 }
 function overdue(task) { return task.due && !task.completedAt && (task.due.allDay ? task.due.date < today(task.due.timezone) : Date.parse(task.due.instant) < Date.now()); }
@@ -71,6 +79,7 @@ function meta(task) {
 function formattedTitle(text) { const el = node('div', 'task-title markdown'); el.innerHTML = markdown(text); return el; }
 function actionButton(label, symbol, handler, className = '') { const button = node('button', `icon-button ${className}`, symbol); button.type = 'button'; button.title = label; button.setAttribute('aria-label', label); button.addEventListener('click', handler); return button; }
 function render() {
+  todayCache.clear();
   $('#page-error').textContent = '';
   const entity = view.startsWith('project:') ? projects.find(p => p.id === view.slice(8)) : view.startsWith('section:') ? sections.find(s => s.id === view.slice(8)) : null;
   if (!titles[view] && !entity) view = 'inbox';
@@ -100,11 +109,12 @@ function render() {
   if (layout !== 'list') { $('#empty').hidden = true; projectViews.draw(selected, sections.filter(s => s.projectId === entity.id)); return; }
   let lastGroup;
   const tree = manual ? orderedTree(selected, (a,b) => sections.findIndex(s => s.id === a.sectionId) - sections.findIndex(s => s.id === b.sectionId) || compareTasks(a,b)) : selected.map(task => ({task, depth:0}));
+  const treeTasks = tree.map(e => e.task);
   for (const {task, depth} of tree) {
     const group = manual ? sections.find(s => s.id === task.sectionId)?.name || 'Без раздела' : task.completedAt ? 'Готово' : overdue(task) ? 'Просрочено' : task.due ? dateLabel({ ...task.due, time: null }) : 'Без срока';
     if (group !== lastGroup) { list.append(node('h2', 'group-heading', group)); lastGroup = group; }
     const row = makeTaskRow(task);
-    if (manual && !query) taskDetails.decorate(row, task, depth, tree.map(e => e.task));
+    if (manual && !query) taskDetails.decorate(row, task, depth, treeTasks);
     list.append(row);
   }
 }
@@ -172,7 +182,7 @@ $('#add-form').addEventListener('submit', async event => {
   try { await api('/tasks', { method: 'POST', body: { source: preview.source, reference: preview.reference, ...settings, ...projectUI.placement('add') } }); $('#task-input').value = ''; await refreshPreview(); composerOpen = false; await load(); $('#add-open').focus(); notify('Задача добавлена'); }
   catch (e) { $('#page-error').textContent = e.message; $('#add-submit').disabled = false; }
 });
-document.querySelectorAll('[data-view]').forEach(el => el.addEventListener('click', async () => { view = el.dataset.view; if ($('#settings-dialog').open) $('#settings-dialog').close(); try { await load(); } catch (e) { $('#page-error').textContent = e.message; } }));
+document.querySelectorAll('[data-view]').forEach(el => el.addEventListener('click', async () => { view = el.dataset.view; if ($('#settings-dialog').open) $('#settings-dialog').close(); render(); try { if (view === 'history') await load(); } catch (e) { $('#page-error').textContent = e.message; } }));
 $('#search').addEventListener('input', render);
 function syncComposer() {
   const unavailable = ['completed', 'history'].includes(view);
