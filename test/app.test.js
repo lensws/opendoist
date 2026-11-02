@@ -97,3 +97,30 @@ test('online backup script produces a restorable SQLite snapshot', async () => {
     try { assert.equal(restored.list()[0].id, original.id); } finally { restored.close(); }
   } finally { store.close(); rmSync(dir, { recursive: true, force: true }); }
 });
+
+test('settings require authentication, validate atomically and persist for another client after restart', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'opendoist-settings-')), database = join(dir, 'db.sqlite');
+  let app;
+  try {
+    app = await start(database);
+    assert.equal((await app.request('/api/settings')).response.status, 401);
+    assert.equal((await app.request('/api/settings', { theme: 'dark' }, 'PATCH')).response.status, 401);
+    await app.login();
+    assert.equal((await app.request('/api/settings')).data.settings.theme, 'system');
+    const saved = { theme: 'dark', accent: '#167eaa', timezone: 'Asia/Tokyo', language: 'en' };
+    assert.deepEqual((await app.request('/api/settings', saved, 'PATCH')).data.settings, saved);
+    for (const patch of [{ theme: 'invalid' }, { accent: 'red' }, { accent: null }, { timezone: 'No/Zone' }, { timezone: null }, { language: 'xx' }, { unknown: true }]) {
+      assert.equal((await app.request('/api/settings', patch, 'PATCH')).response.status, 400);
+      assert.deepEqual((await app.request('/api/settings')).data.settings, saved);
+    }
+    assert.equal((await app.request('/api/settings', { theme: 'light' }, 'PATCH', { Origin: 'https://evil.example' })).response.status, 403);
+    await app.close(); app = await start(database); await app.login();
+    assert.deepEqual((await app.request('/api/settings')).data.settings, saved);
+    const otherLogin = await fetch(`${app.base}/api/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password }) });
+    const otherCookie = otherLogin.headers.get('set-cookie').split(';')[0];
+    const other = await fetch(`${app.base}/api/settings`, { headers: { Cookie: otherCookie } });
+    assert.deepEqual((await other.json()).settings, saved);
+    const updated = (await app.request('/api/settings', { theme: 'system' }, 'PATCH')).data.settings;
+    assert.deepEqual(updated, { ...saved, theme: 'system' });
+  } finally { if (app?.server.listening) await app.close(); rmSync(dir, { recursive: true, force: true }); }
+});

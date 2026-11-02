@@ -76,6 +76,8 @@ export function createApp({ password, database = './data/opendoist.sqlite', publ
         store.db.prepare('DELETE FROM sessions WHERE hash=?').run(sessionHash(token));
         return send(200, { ok: true }, { 'Set-Cookie': cookie('', 0) });
       }
+      if (path === '/api/settings' && method === 'GET') return send(200, { settings: store.settings() });
+      if (path === '/api/settings' && method === 'PATCH') return send(200, { settings: store.saveSettings(await readJSON(req)) });
       if (path === '/api/tasks' && method === 'GET') return send(200, { tasks: store.list() });
       if (path === '/api/history' && method === 'GET') return send(200, { history: store.history() });
       if (path === '/api/export' && method === 'GET') return send(200, { version: 1, exportedAt: new Date().toISOString(), tasks: store.list(), history: store.history() }, { 'Content-Disposition': 'attachment; filename="opendoist-export.json"' });

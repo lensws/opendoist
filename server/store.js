@@ -15,7 +15,23 @@ export class Store {
       CREATE TABLE IF NOT EXISTS tasks (id TEXT PRIMARY KEY, data TEXT NOT NULL, revision INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS completions (id TEXT PRIMARY KEY, task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE, completed_at TEXT NOT NULL, snapshot TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS sessions (hash TEXT PRIMARY KEY, expires INTEGER NOT NULL);
-      PRAGMA user_version=1;`);
+      CREATE TABLE IF NOT EXISTS settings (id INTEGER PRIMARY KEY CHECK (id=1), data TEXT NOT NULL);
+      PRAGMA user_version=2;`);
+  }
+  settings() {
+    const row = this.db.prepare('SELECT data FROM settings WHERE id=1').get();
+    return row ? JSON.parse(row.data) : { theme: 'system', accent: '#c95736', timezone: 'Europe/Moscow', language: 'auto' };
+  }
+  saveSettings(patch) {
+    const allowed = ['theme', 'accent', 'timezone', 'language'];
+    if (Object.keys(patch).some(key => !allowed.includes(key))) throw new AppError(400, 'Неизвестная настройка');
+    const next = { ...this.settings(), ...patch };
+    if (!['light', 'dark', 'system'].includes(next.theme) || !['auto', 'ru', 'en'].includes(next.language) || typeof next.accent !== 'string' || !/^#[0-9a-f]{6}$/i.test(next.accent)) throw new AppError(400, 'Некорректные настройки оформления или языка');
+    if (typeof next.timezone !== 'string' || !next.timezone.trim() || next.timezone.length > 100) throw new AppError(400, 'Некорректный часовой пояс');
+    try { new Intl.DateTimeFormat('ru', { timeZone: next.timezone }); } catch { throw new AppError(400, 'Некорректный часовой пояс'); }
+    next.accent = next.accent.toLowerCase();
+    this.db.prepare('INSERT INTO settings (id,data) VALUES (1,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data').run(JSON.stringify(next));
+    return next;
   }
   close() { this.db.close(); }
   list() { return this.db.prepare('SELECT data FROM tasks').all().map(r => JSON.parse(r.data)).sort((a, b) => b.createdAt.localeCompare(a.createdAt)); }

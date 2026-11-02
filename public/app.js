@@ -27,7 +27,14 @@ function recurringLabel(task) {
   return spans?.length ? spans.map(s => s.text).join(' ') : 'Повторяется';
 }
 function showLogin() { $('#workspace').hidden = true; $('#login-screen').hidden = false; tasks = []; history = []; $('#task-list').replaceChildren(); for (const dialog of document.querySelectorAll('dialog[open]')) dialog.close(); }
+async function loadSettings() {
+  settings = (await api('/settings')).settings;
+  window.OpenDoistAppearance.apply(settings);
+  // Optional first-paint cache; the server remains the source of truth.
+  try { localStorage.setItem('opendoist.settings', JSON.stringify(settings)); } catch { /* Storage is optional. */ }
+}
 async function load() {
+  await loadSettings();
   const result = await api('/tasks'); tasks = result.tasks;
   if (view === 'history') history = (await api('/history')).history;
   render();
@@ -159,21 +166,21 @@ document.querySelectorAll('[data-accent]').forEach(button => button.addEventList
 $('#accent-color').addEventListener('input', previewAppearance);
 // close covers Cancel, the close button, Escape, and expired-session dismissal.
 $('#settings-dialog').addEventListener('close', () => window.OpenDoistAppearance.apply(settings));
-$('#settings-form').addEventListener('submit', event => {
+$('#settings-form').addEventListener('submit', async event => {
   event.preventDefault(); const timezone = $('#timezone').value.trim();
   try { new Intl.DateTimeFormat('ru', { timeZone: timezone }); } catch { $('#settings-error').textContent = 'Укажите часовой пояс, например Europe/Moscow'; return; }
   const next = { ...settings, timezone, language: $('#language').value, ...appearanceDraft() };
-  try { localStorage.setItem('opendoist.settings', JSON.stringify(next)); }
-  catch { $('#settings-error').textContent = 'Не удалось сохранить настройки. Разрешите хранение данных сайта в браузере.'; return; }
-  settings = next; window.OpenDoistAppearance.apply(settings); $('#settings-dialog').close(); render(); refreshPreview();
-});
-window.addEventListener('storage', event => {
-  if (event.key !== 'opendoist.settings') return;
+  const button = event.submitter; button.disabled = true;
   try {
-    const updated = JSON.parse(event.newValue) || {};
-    settings = { ...settings, ...updated, ...window.OpenDoistAppearance.normalize(updated) };
-    if (!$('#settings-dialog').open) window.OpenDoistAppearance.apply(settings);
-  } catch { /* Ignore malformed settings from another tab. */ }
+    settings = (await api('/settings', { method: 'PATCH', body: next })).settings;
+    try { localStorage.setItem('opendoist.settings', JSON.stringify(settings)); } catch { /* Storage is optional. */ }
+    window.OpenDoistAppearance.apply(settings); $('#settings-dialog').close(); render(); refreshPreview();
+  } catch (error) { $('#settings-error').textContent = error.message; }
+  finally { button.disabled = false; }
+});
+window.addEventListener('focus', async () => {
+  if ($('#workspace').hidden || $('#settings-dialog').open) return;
+  try { await loadSettings(); render(); refreshPreview(); } catch (error) { $('#page-error').textContent = error.message; }
 });
 $('#login-form').addEventListener('submit', async event => {
   event.preventDefault(); event.submitter.disabled = true; $('#login-error').textContent = '';
