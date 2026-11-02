@@ -30,7 +30,7 @@
     </div>
   </main>
 </div>
-<dialog id="edit-dialog"><form id="edit-form"><div class="dialog-heading"><h2>Редактировать задачу</h2><button type="button" data-close="edit-dialog" class="icon-button" aria-label="Закрыть">×</button></div><div class="form-grid"><div><label for="edit-project">Проект задачи</label><select id="edit-project"></select></div><div><label for="edit-section">Раздел задачи</label><select id="edit-section"></select></div></div><label for="edit-title">Название</label><input id="edit-title" maxlength="500" required><label for="edit-schedule">Новый срок или повторение</label><input id="edit-schedule" maxlength="350" placeholder="Например, завтра в 10 или каждую пятницу"><p class="muted small">Оставьте пустым, чтобы сохранить текущее расписание.</p><label class="checkbox-label"><input id="edit-clear" type="checkbox"> Удалить срок и повторение</label><p id="edit-preview" class="small" aria-live="polite"></p><p id="edit-error" class="error" role="alert"></p><div class="dialog-actions"><button type="button" class="secondary" data-close="edit-dialog">Отмена</button><button class="primary" type="submit">Сохранить</button></div></form></dialog>
+<dialog id="edit-dialog"><form id="edit-form"><div class="dialog-heading"><h2>Редактировать задачу</h2><button type="button" data-close="edit-dialog" class="icon-button" aria-label="Закрыть">×</button></div><div class="form-grid"><div><label for="edit-project">Проект задачи</label><select id="edit-project"></select></div><div><label for="edit-section">Раздел задачи</label><select id="edit-section"></select></div></div><label for="edit-title">Название</label><input id="edit-title" maxlength="500" required><label for="edit-parent">Родительская задача</label><select id="edit-parent"></select><p class="muted small">При выборе родителя задача переместится в его раздел. Порядок: перетаскивание за ⠿ или Alt+стрелки.</p><label for="edit-description">Описание</label><textarea id="edit-description" maxlength="20000" rows="5" placeholder="Подробности, ссылки, заметки…"></textarea><p class="muted small">Markdown: **жирный**, *курсив*, ~~зачёркнутый~~, `код`, [ссылка](https://example.com). В описании также списки, заголовки и цитаты.</p><button id="description-toggle" type="button" class="secondary">Предпросмотр Markdown</button><div id="title-preview" class="markdown" hidden></div><div id="description-preview" class="markdown" hidden></div><details class="channel-section"><summary>Файлы задачи</summary><div id="attachment-list"></div><label for="attachment-input">Добавить файлы</label><input type="file" id="attachment-input" multiple><p class="muted small">До 20 МБ на файл, до 20 файлов. Загрузка и удаление применяются сразу.</p><p id="attachment-error" class="error" role="alert"></p></details><label for="edit-schedule">Новый срок или повторение</label><input id="edit-schedule" maxlength="350" placeholder="Например, завтра в 10 или каждую пятницу"><p class="muted small">Оставьте пустым, чтобы сохранить текущее расписание.</p><label class="checkbox-label"><input id="edit-clear" type="checkbox"> Удалить срок и повторение</label><p id="edit-preview" class="small" aria-live="polite"></p><p id="edit-error" class="error" role="alert"></p><div class="dialog-actions"><button type="button" class="secondary" data-close="edit-dialog">Отмена</button><button class="primary" type="submit">Сохранить</button></div></form></dialog>
 <dialog id="entity-dialog" aria-labelledby="entity-heading"><form id="entity-form"><div class="dialog-heading"><h2 id="entity-heading">Новый проект</h2><button type="button" data-close="entity-dialog" class="icon-button" aria-label="Закрыть">×</button></div><label for="entity-name">Название</label><input id="entity-name" maxlength="80" required><label for="entity-icon-type">Значок в меню</label><select id="entity-icon-type"><option value="color">Цветной значок</option><option value="emoji">Эмодзи</option></select><label id="entity-color-label">Цвет значка<input id="entity-color" type="color" value="#c95736"></label><div id="entity-emoji-label" hidden class="emoji-picker">
 <label for="emoji-search">Найти эмодзи</label><input id="emoji-search" type="search" placeholder="Например, работа, кот, travel" autocomplete="off" maxlength="100">
 <label for="emoji-group" class="sr-only">Категория эмодзи</label><select id="emoji-group"><option value="">Все категории</option></select>
@@ -68,11 +68,12 @@
       <p class="muted small">Сохраните задачи в JSON или перенесите их из экспорта OpenDoist.</p>
       <a class="secondary export-button" href="/api/export" download>↓ Экспорт задач</a>
       <label for="import-file">Импорт задач из JSON</label><input id="import-file" type="file" accept=".json,application/json">
-      <p class="muted small">До 10 МБ и 10 000 задач. Существующие задачи не изменятся; совпадающие ID будут пропущены. Сроки, повторения и история сохраняются. Прошедшие напоминания не отправляются заново.</p>
+      <p class="muted small">До 10 МБ и 10 000 задач. Существующие задачи не изменятся; совпадающие ID будут пропущены. Сроки, повторения, описания, вложенность и история сохраняются. Файлы входят только в полную резервную копию SQLite. Прошедшие напоминания не отправляются заново.</p>
       <p id="import-preview" class="small" role="status"></p><p id="import-error" class="error" role="alert"></p>
       <button id="import-submit" type="button" class="primary" disabled>Импортировать задачи</button>
     </details>
     <div class="settings-divider"></div>
+    <button type="button" id="backups-open" class="secondary settings-link">Резервное копирование →</button>
     <button type="button" id="notifications-open" class="secondary settings-link">🔔 Уведомления и сводка дня →</button>
     <label for="timezone">Часовой пояс новых задач</label><input id="timezone" list="timezones" required><datalist id="timezones"><option value="Europe/Moscow"><option value="Europe/Berlin"><option value="Asia/Dubai"><option value="Asia/Tbilisi"><option value="America/New_York"><option value="UTC"></datalist>
     <label for="language">Язык распознавания</label><select id="language"><option value="auto">Автоматически · RU / EN</option><option value="ru">Русский · день / месяц</option><option value="en">English · month / day</option></select>
@@ -124,5 +125,25 @@
     <div class="dialog-actions"><button type="button" class="secondary" data-close="notifications-dialog">Закрыть</button><button class="primary" type="submit">Сохранить уведомления</button></div>
   </form>
 </dialog>
+<dialog id="backups-dialog" aria-labelledby="backups-title"><form id="backup-form">
+<div class="dialog-heading"><h2 id="backups-title">Резервное копирование</h2><button type="button" data-close="backups-dialog" class="icon-button" aria-label="Закрыть">×</button></div>
+<p class="muted small">Полная копия SQLite: задачи, вложения, история и настройки, включая сохранённые ключи каналов и S3. Храните копии в закрытой папке или приватном bucket. Пароль входа и конфигурацию сервера сохраните отдельно.</p>
+<label class="checkbox-label"><input id="backup-enabled" type="checkbox"> Создавать по расписанию</label>
+<label for="backup-frequency">Как часто</label><select id="backup-frequency"><option value="hourly">Раз в час</option><option value="daily">Раз в сутки</option><option value="weekly">Раз в неделю</option></select>
+<label for="backup-target">Куда сохранять</label><select id="backup-target"><option value="folder">Папка на сервере</option><option value="s3">S3-совместимое хранилище</option></select>
+<div id="backup-folder-fields"><label for="backup-folder">Абсолютный путь к папке</label><input id="backup-folder" placeholder="/app/data/backups"><p class="muted small">В Docker это путь внутри контейнера. Для другой папки сервера подключите её как volume с правом записи.</p></div>
+<div id="backup-s3-fields" hidden>
+<label for="backup-endpoint">Endpoint (пустой для AWS)</label><input id="backup-endpoint" placeholder="https://s3.example.com">
+<label for="backup-region">Регион</label><input id="backup-region" value="us-east-1">
+<label for="backup-bucket">Bucket</label><input id="backup-bucket">
+<label for="backup-prefix">Префикс файлов</label><input id="backup-prefix" value="opendoist/">
+<label for="backup-accessKeyId">Access key ID</label><input id="backup-accessKeyId" type="password" autocomplete="new-password">
+<label for="backup-secretAccessKey">Secret access key</label><input id="backup-secretAccessKey" type="password" autocomplete="new-password"><p id="backup-credentials-note" class="muted small"></p>
+<label class="checkbox-label"><input id="backup-forcePathStyle" type="checkbox" checked> Path-style адресация (для S3-совместимых сервисов)</label>
+</div>
+<p class="muted small">Сначала сохраните параметры. Копии не удаляются автоматически: для S3 можно настроить срок хранения в bucket. Расписание работает, пока запущен сервер.</p>
+<pre id="backup-status" class="small" role="status"></pre><p id="backup-error" class="error" role="alert"></p>
+<div class="dialog-actions"><button id="backup-run" type="button" class="secondary">Создать сейчас</button><button type="submit" class="primary">Сохранить</button></div>
+</form></dialog>
 <div id="toast" class="toast" role="status" hidden><span id="toast-text"></span><button id="toast-undo" hidden>Отменить</button></div>
 </body></html>

@@ -1,3 +1,4 @@
+import { BackupWorker } from './backups.js';
 import { rescheduleTask } from './calendar.js';
 import { createServer } from 'node:http';
 import { readFileSync } from 'node:fs';
@@ -8,7 +9,7 @@ import { Store, AppError } from './store.js';
 import { TelegramInbox } from './telegram.js';
 import { NotificationWorker, publicConfig, validateConfig, makeReminder } from './notifications.js';
 
-const assets = new Map(['index.html', 'app.js', 'style.css', 'icon.svg', 'appearance.js', 'notifications.js', 'transfer.js', 'projects.js', 'project-views.js', 'calendar-model.js', 'submit-shortcut.js', 'task-input.js', 'emoji-picker.js', 'emoji-search.js', 'emojis.json', 'emojis-LICENSE.txt'].map(name => [name, readFileSync(new URL(`../public/${name}`, import.meta.url))]));
+const assets = new Map(['task-tree.js', 'task-details.js', 'markdown.js', 'backups.js', 'index.html', 'app.js', 'style.css', 'icon.svg', 'appearance.js', 'notifications.js', 'transfer.js', 'projects.js', 'project-views.js', 'calendar-model.js', 'submit-shortcut.js', 'task-input.js', 'emoji-picker.js', 'emoji-search.js', 'emojis.json', 'emojis-LICENSE.txt'].map(name => [name, readFileSync(new URL(`../public/${name}`, import.meta.url))]));
 const mime = { json: 'application/json; charset=utf-8', txt: 'text/plain; charset=utf-8', html: 'text/html; charset=utf-8', js: 'text/javascript; charset=utf-8', css: 'text/css; charset=utf-8', svg: 'image/svg+xml' };
 const SESSION_AGE = 7 * 86400 * 1000;
 async function readJSON(req, limit = 16384) {
@@ -18,6 +19,13 @@ async function readJSON(req, limit = 16384) {
   try { const body = JSON.parse(Buffer.concat(chunks).toString()); if (!body || Array.isArray(body) || typeof body !== 'object') throw Error(); return body; }
   catch { throw new AppError(400, 'Некорректный JSON'); }
 }
+async function readFileBody(req) {
+  if (req.headers['content-type'] !== 'application/octet-stream') throw new AppError(415, 'Ожидается файл');
+  const chunks = []; let size = 0;
+  for await (const chunk of req) { size += chunk.length; if (size > 20 * 1024 * 1024) throw new AppError(413, 'Файл больше 20 МБ'); chunks.push(chunk); }
+  return Buffer.concat(chunks);
+}
+function description(value = '') { if (typeof value !== 'string' || value.length > 20000) throw new AppError(400, 'Описание — до 20 000 символов'); return value; }
 function text(value, max = 500) { if (typeof value !== 'string' || !value.trim() || value.length > max) throw new AppError(400, `Введите текст длиной до ${max} символов`); return value.trim(); }
 function parse(body) {
   const source = text(body.source);
@@ -33,13 +41,14 @@ function saveable(parsed) {
   if (!parsed.title.trim()) throw new AppError(422, 'Добавьте название задачи перед датой');
   return parsed;
 }
-export function createApp({ password, database = './data/opendoist.sqlite', publicUrl, secureCookie = false, notificationSender } = {}) {
+export function createApp({ password, database = './data/opendoist.sqlite', publicUrl, secureCookie = false, backupUpload, notificationSender } = {}) {
   if (typeof password !== 'string' || password.length < 12 || password === 'change-this-before-use') throw new Error('Set OPENDOIST_PASSWORD to a unique password of at least 12 characters');
   const allowedOrigin = publicUrl ? new URL(publicUrl).origin : null;
   if (allowedOrigin?.startsWith('https:')) secureCookie = true;
   const store = new Store(database);
   const notifications = new NotificationWorker(store, { publicUrl: allowedOrigin || '', ...(notificationSender ? { send: notificationSender } : {}) });
   const telegram = new TelegramInbox(store);
+  const backups = new BackupWorker(store, { database, ...(backupUpload ? { upload:backupUpload } : {}) });
   let lastTest = 0;
   const salt = randomBytes(32), expected = scryptSync(password, salt, 32);
   const sessionHash = token => createHmac('sha256', password).update(token).digest('hex');
@@ -83,6 +92,25 @@ export function createApp({ password, database = './data/opendoist.sqlite', publ
         store.db.prepare('DELETE FROM sessions WHERE hash=?').run(sessionHash(token));
         return send(200, { ok: true }, { 'Set-Cookie': cookie('', 0) });
       }
+      if (path === '/api/backups' && method === 'GET') return send(200, { config:backups.status() });
+      if (path === '/api/backups' && method === 'PATCH') return send(200, { config:backups.save(await readJSON(req)) });
+      if (path === '/api/backups/run' && method === 'POST') { backups.run(); return send(202, { config:backups.status() }); }
+      const fileMatch = /^\/api\/tasks\/([a-f0-9-]+)\/attachments(?:\/([a-f0-9-]+))?$/.exec(path);
+      if (fileMatch) {
+        const [, taskId, fileId] = fileMatch; store.get(taskId);
+        if (method === 'GET' && !fileId) return send(200, { files:store.attachments(taskId) });
+        if (method === 'POST' && !fileId) {
+          let name; try { name = decodeURIComponent(req.headers['x-file-name'] || ''); } catch { throw new AppError(400, 'Некорректное имя файла'); }
+          return send(201, { file:store.addAttachment(taskId, name, await readFileBody(req)) });
+        }
+        const file = fileId && store.db.prepare('SELECT * FROM attachments WHERE id=? AND task_id=?').get(fileId, taskId);
+        if (!file) throw new AppError(404, 'Файл не найден');
+        if (method === 'GET') { res.writeHead(200, { ...headers, 'Content-Type':'application/octet-stream', 'Content-Disposition':`attachment; filename*=UTF-8''${encodeURIComponent(file.name).replace(/'/g,'%27')}`, 'Content-Length':file.data.length }); return res.end(Buffer.from(file.data)); }
+        if (method === 'DELETE') { store.db.prepare('DELETE FROM attachments WHERE id=?').run(fileId); return send(200, { ok:true }); }
+        throw new AppError(405, 'Метод не поддерживается');
+      }
+      const moveMatch = /^\/api\/tasks\/([a-f0-9-]+)\/move$/.exec(path);
+      if (moveMatch && method === 'POST') return send(200, { task:store.moveTask(moveMatch[1], await readJSON(req, 1024 * 1024)) });
       if (path === '/api/notifications' && method === 'GET') return send(200, { config: publicConfig(notifications.config()), deliveries: store.notificationStatus(), telegram: telegram.status });
       if (path === '/api/notifications' && method === 'PATCH') {
         const config = validateConfig(await readJSON(req), notifications.config());
@@ -125,8 +153,8 @@ export function createApp({ password, database = './data/opendoist.sqlite', publ
         return send(200, { ...preview, upcoming });
       }
       if (path === '/api/tasks' && method === 'POST') {
-        const body = await readJSON(req), { parsed } = parse(body);
-        return send(201, { task: store.create({ ...saveable(parsed), ...store.placement(body.projectId ?? null, body.sectionId ?? null) }) });
+        const body = await readJSON(req, 100000), { parsed } = parse(body);
+        return send(201, { task: store.create({ ...saveable(parsed), description:description(body.description), parentId:body.parentId ?? null, ...store.placement(body.projectId ?? null, body.sectionId ?? null) }) });
       }
       const rescheduleMatch = /^\/api\/tasks\/([a-f0-9-]+)\/reschedule$/.exec(path);
       if (rescheduleMatch && method === 'POST') {
@@ -149,7 +177,7 @@ export function createApp({ password, database = './data/opendoist.sqlite', publ
       }
       const match = /^\/api\/tasks\/([a-f0-9-]+)(?:\/(complete|undo))?$/.exec(path);
       if (!match) throw new AppError(404, 'Не найдено');
-      const body = await readJSON(req);
+      const body = await readJSON(req, 100000);
       if (!Number.isInteger(body.revision)) throw new AppError(400, 'Требуется версия задачи');
       const [, id, action] = match;
       if (method === 'POST' && action === 'complete') return send(200, { task: store.complete(id, body.revision) });
@@ -161,7 +189,7 @@ export function createApp({ password, database = './data/opendoist.sqlite', publ
         if (body.source !== undefined) schedule = saveable(parse(body).parsed);
         const task = store.mutate(id, body.revision, previous => {
           const placement = store.placement(body.projectId === undefined ? previous.projectId ?? null : body.projectId, body.sectionId === undefined ? previous.sectionId ?? null : body.sectionId);
-          const next = { ...previous, ...placement, ...(schedule || {}), deadline: schedule?.deadline ?? previous.deadline, title };
+          const next = { ...previous, ...placement, ...(schedule || {}), deadline: schedule?.deadline ?? previous.deadline, description:body.description === undefined ? previous.description || '' : description(body.description), title };
           if (body.clearSchedule === true) { next.due = null; next.recurrence = null; next.status = 'unscheduled'; }
           return next;
         });
@@ -170,8 +198,8 @@ export function createApp({ password, database = './data/opendoist.sqlite', publ
       throw new AppError(405, 'Метод не поддерживается');
     } catch (error) { send(error.status || 500, { error: error.status ? error.message : 'Ошибка сервера. Повторите запрос.' }); if (!error.status) console.error('Request failed:', error.name); }
   });
-  server.requestTimeout = 15000;
+  server.requestTimeout = 120000; // Allow bounded file uploads on slower connections.
   server.headersTimeout = 10000;
-  server.on('close', () => store.close());
-  return { server, store, notifications, telegram };
+  server.on('close', async () => { await backups.stop(); store.close(); });
+  return { server, store, notifications, telegram, backups };
 }

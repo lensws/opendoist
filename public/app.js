@@ -1,3 +1,7 @@
+import { orderedTree, compareTasks } from './task-tree.js';
+import { markdown } from './markdown.js';
+import { initTaskDetails } from './task-details.js';
+import { initBackups } from './backups.js';
 import { matchesSubmitShortcut } from './submit-shortcut.js';
 import { initProjectViews } from './project-views.js';
 import { initTaskInput } from './task-input.js';
@@ -18,6 +22,8 @@ async function api(path, { method = 'GET', body } = {}) {
   if (!response.ok) { if (response.status === 401 && path !== '/login') showLogin(); const error = new Error(data.error || 'Не удалось выполнить запрос'); error.status = response.status; throw error; }
   return data;
 }
+initBackups({api});
+const taskDetails = initTaskDetails({api, getTasks:() => tasks, reload:load, notify});
 const projectUI = initProjects({ api, getData: () => ({ projects, sections, tasks }), reload: load, selectView: next => { view = next; render(); }, notify });
 const taskInput = initTaskInput({ getProjects: () => projects, chooseProject: id => projectUI.fillPlacement('add', id, '') });
 const projectViews = initProjectViews({ api, reload:load, redraw:render, today:() => today(), getTimezone:() => settings.timezone, makeTaskRow, addTask:addInView, editTask:openEdit, completeTask, notify });
@@ -62,6 +68,7 @@ function meta(task) {
   if (project) el.append(node('span', 'project-pill', `${project.emoji || '#'} ${project.name}${section ? ` / ${section.name}` : ''}`));
   return el;
 }
+function formattedTitle(text) { const el = node('div', 'task-title markdown'); el.innerHTML = markdown(text); return el; }
 function actionButton(label, symbol, handler, className = '') { const button = node('button', `icon-button ${className}`, symbol); button.type = 'button'; button.title = label; button.setAttribute('aria-label', label); button.addEventListener('click', handler); return button; }
 function render() {
   $('#page-error').textContent = '';
@@ -83,17 +90,22 @@ function render() {
   syncComposer();
   if (view === 'history') {
     const rows = history.filter(h => h.task.title.toLocaleLowerCase().includes(query));
-    for (const item of rows) { const row = node('article', 'task done'); row.append(node('span', 'task-check', '✓')); const content = node('div', 'task-main'); content.append(node('div', 'task-title', item.task.title), meta(item.task), node('div', 'task-meta', `Выполнено ${new Date(item.completedAt).toLocaleString('ru', { timeZone: settings.timezone })}`)); row.append(content); list.append(row); }
+    for (const item of rows) { const row = node('article', 'task done'); row.append(node('span', 'task-check', '✓')); const content = node('div', 'task-main'); content.append(formattedTitle(item.task.title), meta(item.task), node('div', 'task-meta', `Выполнено ${new Date(item.completedAt).toLocaleString('ru', { timeZone: settings.timezone })}`)); row.append(content); list.append(row); }
     $('#task-summary').textContent = `Выполнений: ${rows.length}`; $('#empty').hidden = !!rows.length; return;
   }
-  const selected = (entity ? active.filter(t => view.startsWith('project:') ? t.projectId === entity.id : t.sectionId === entity.id) : filters[view]).filter(t => t.title.toLocaleLowerCase().includes(query)).sort((a, b) => (view.startsWith('project:') ? sections.findIndex(s => s.id === a.sectionId) - sections.findIndex(s => s.id === b.sectionId) : 0) || (a.due?.date || '9999').localeCompare(b.due?.date || '9999') || (a.due?.time || '').localeCompare(b.due?.time || '') || b.createdAt.localeCompare(a.createdAt));
+  let selected = (entity ? active.filter(t => view.startsWith('project:') ? t.projectId === entity.id : t.sectionId === entity.id) : filters[view]).filter(t => `${t.title} ${t.description || ''}`.toLocaleLowerCase().includes(query)).sort((a, b) => (view.startsWith('project:') ? sections.findIndex(s => s.id === a.sectionId) - sections.findIndex(s => s.id === b.sectionId) : 0) || (a.due?.date || '9999').localeCompare(b.due?.date || '9999') || (a.due?.time || '').localeCompare(b.due?.time || '') || b.createdAt.localeCompare(a.createdAt));
+  const manual = !!entity || view === 'inbox';
+  if (manual) selected.sort((a,b) => sections.findIndex(s => s.id === a.sectionId) - sections.findIndex(s => s.id === b.sectionId) || compareTasks(a,b));
   $('#task-summary').textContent = `Задач: ${selected.length}`; $('#empty').hidden = !!selected.length;
   if (layout !== 'list') { $('#empty').hidden = true; projectViews.draw(selected, sections.filter(s => s.projectId === entity.id)); return; }
   let lastGroup;
-  for (const task of selected) {
-    const group = view.startsWith('project:') ? sections.find(s => s.id === task.sectionId)?.name || 'Без раздела' : task.completedAt ? 'Готово' : overdue(task) ? 'Просрочено' : task.due ? dateLabel({ ...task.due, time: null }) : 'Без срока';
+  const tree = manual ? orderedTree(selected, (a,b) => sections.findIndex(s => s.id === a.sectionId) - sections.findIndex(s => s.id === b.sectionId) || compareTasks(a,b)) : selected.map(task => ({task, depth:0}));
+  for (const {task, depth} of tree) {
+    const group = manual ? sections.find(s => s.id === task.sectionId)?.name || 'Без раздела' : task.completedAt ? 'Готово' : overdue(task) ? 'Просрочено' : task.due ? dateLabel({ ...task.due, time: null }) : 'Без срока';
     if (group !== lastGroup) { list.append(node('h2', 'group-heading', group)); lastGroup = group; }
-    list.append(makeTaskRow(task));
+    const row = makeTaskRow(task);
+    if (manual && !query) taskDetails.decorate(row, task, depth, tree.map(e => e.task));
+    list.append(row);
   }
 }
 async function completeTask(task, check) {
@@ -105,14 +117,16 @@ function makeTaskRow(task) {
     const row = node('article', `task${task.completedAt ? ' done' : ''}`);
     const check = node('button', 'task-check', task.completedAt ? '✓' : ''); check.type = 'button'; check.title = task.completedAt ? 'Отменить выполнение' : 'Выполнить задачу'; check.setAttribute('aria-label', `${check.title}: ${task.title}`);
     check.addEventListener('click', () => completeTask(task, check));
-    const content = node('div', 'task-main'); content.append(node('div', 'task-title', task.title), meta(task));
+    const content = node('div', 'task-main'); const title = node('div', 'task-title markdown'); title.innerHTML = markdown(task.title); title.addEventListener('dblclick', () => openEdit(task)); content.append(title, meta(task));
+    if (task.description) { const description = node('div', 'task-description markdown'); description.innerHTML = markdown(task.description, true); content.append(description); }
+    if (task.parentId) { const parent = tasks.find(t => t.id === task.parentId); if (parent) { const label=node('div','muted small markdown'); label.innerHTML=`↳ ${markdown(parent.title)}`; content.append(label); } }
     const actions = node('div', 'task-actions');
     if (!task.completedAt) {
       actions.append(actionButton('Напомнить', task.reminders?.length ? `🔔 ${task.reminders.length}` : '🔔 Напомнить', () => openReminders(task), 'reminder-action'));
-      actions.append(actionButton('Редактировать задачу', '✎', () => openEdit(task)));
     }
+    actions.append(actionButton('Открыть задачу', '✎', () => openEdit(task)));
     actions.append(actionButton('Удалить задачу', '×', async () => {
-      if (!confirm(`Удалить «${task.title}» и историю её выполнений?`)) return;
+      if (!confirm(`Удалить «${task.title}» и историю её выполнений? Дочерние задачи сохранятся.`)) return;
       try { await api(`/tasks/${task.id}`, { method: 'DELETE', body: { revision: task.revision } }); await load(); notify('Задача удалена'); } catch (e) { $('#page-error').textContent = e.message; }
     }, 'delete'));
     row.append(check, content, actions); return row;
@@ -183,7 +197,7 @@ function notify(message, undo = null) {
   $('#toast-undo').onclick = async () => { $('#toast-undo').disabled = true; try { await undo(); $('#toast').hidden = true; } catch (e) { $('#toast-text').textContent = e.message; } finally { $('#toast-undo').disabled = false; } };
   toastTimer = setTimeout(() => { $('#toast').hidden = true; }, 9000);
 }
-function openEdit(task) { editTask = task; projectUI.fillPlacement('edit', task.projectId, task.sectionId); $('#edit-title').value = task.title; $('#edit-schedule').value = ''; $('#edit-clear').checked = false; $('#edit-preview').textContent = `Текущий срок: ${dateLabel(task.due)}${task.recurrence ? ` · ${recurringLabel(task)}` : ''}`; $('#edit-error').textContent = ''; $('#edit-dialog').showModal(); }
+function openEdit(task) { editTask = task; projectUI.fillPlacement('edit', task.projectId, task.sectionId); $('#edit-title').value = task.title; taskDetails.open(task); $('#edit-schedule').value = ''; $('#edit-clear').checked = false; $('#edit-preview').textContent = `Текущий срок: ${dateLabel(task.due)}${task.recurrence ? ` · ${recurringLabel(task)}` : ''}`; $('#edit-error').textContent = ''; $('#edit-dialog').showModal(); }
 let editTimer, editSequence = 0;
 $('#edit-schedule').addEventListener('input', () => {
   clearTimeout(editTimer); const sequence = ++editSequence;
@@ -191,10 +205,10 @@ $('#edit-schedule').addEventListener('input', () => {
 });
 $('#edit-form').addEventListener('submit', async event => {
   event.preventDefault(); const button = event.submitter; button.disabled = true;
-  const body = { title: $('#edit-title').value.trim(), revision: editTask.revision, clearSchedule: $('#edit-clear').checked, ...projectUI.placement('edit') };
+  const body = { title: $('#edit-title').value.trim(), description: $('#edit-description').value, revision: editTask.revision, clearSchedule: $('#edit-clear').checked, ...projectUI.placement('edit') };
   const expression = $('#edit-schedule').value.trim();
   if (expression && !body.clearSchedule) { body.source = `Task ${expression}`; Object.assign(body, settings, { timezone: editTask.due?.timezone || settings.timezone }); }
-  try { await api(`/tasks/${editTask.id}`, { method: 'PATCH', body }); $('#edit-dialog').close(); await load(); notify('Изменения сохранены'); }
+  try { const result = await api(`/tasks/${editTask.id}`, { method: 'PATCH', body }); editTask = result.task; await taskDetails.saveParent(editTask, editTask.parentId); $('#edit-dialog').close(); await load(); notify('Изменения сохранены'); }
   catch (e) { $('#edit-error').textContent = e.message; } finally { button.disabled = false; }
 });
 document.querySelectorAll('[data-close]').forEach(el => el.addEventListener('click', () => document.getElementById(el.dataset.close).close()));
@@ -242,4 +256,4 @@ $('#login-form').addEventListener('submit', async event => {
 $('#logout').addEventListener('click', async () => { try { await api('/logout', { method: 'POST', body: {} }); showLogin(); } catch (e) { $('#page-error').textContent = e.message; } });
 try { await api('/session'); $('#workspace').hidden = false; await load(); } catch (e) { showLogin(); if (e.status !== 401) $('#login-error').textContent = 'Сервер недоступен. Обновите страницу.'; }
 
-setInterval(async () => { if (document.hidden || $('#workspace').hidden || document.querySelector('dialog[open]') || document.activeElement?.matches('input,textarea,select')) return; try { await load(); } catch { /* Reconnect on the next refresh. */ } }, 15000);
+setInterval(async () => { if (document.querySelector('.dragging') || document.hidden || $('#workspace').hidden || document.querySelector('dialog[open]') || document.activeElement?.matches('input,textarea,select')) return; try { await load(); } catch { /* Reconnect on the next refresh. */ } }, 15000);

@@ -43,7 +43,11 @@ function recurrence(value, schedule, label) {
 function task(value, label) {
   if (!obj(value) || !uuid(value.id) || !str(value.title, 500) || !value.title.trim() || !Number.isSafeInteger(value.revision) || value.revision < 1 || !stamp(value.createdAt) || !stamp(value.updatedAt) || (value.completedAt != null && !stamp(value.completedAt))) fail(`некорректная задача (${label})`);
   const result = { id: value.id.toLowerCase(), title: value.title, revision: value.revision, createdAt: value.createdAt, updatedAt: value.updatedAt, completedAt: value.completedAt ?? null, due: due(value.due, label), deadline: due(value.deadline, label) };
-  for (const key of ['projectId', 'sectionId']) { if (value[key] != null && !uuid(value[key])) fail(`некорректный проект или раздел (${label})`); result[key] = value[key]?.toLowerCase() || null; }
+  for (const key of ['projectId', 'sectionId', 'parentId']) { if (value[key] != null && !uuid(value[key])) fail(`некорректный проект или раздел (${label})`); result[key] = value[key]?.toLowerCase() || null; }
+  if (value.description !== undefined && !str(value.description, 20000)) fail(`некорректное описание (${label})`);
+  result.description = value.description || '';
+  if (value.position !== undefined && !Number.isSafeInteger(value.position)) fail(`некорректный порядок (${label})`);
+  if (value.position !== undefined) result.position = value.position;
   result.recurrence = recurrence(value.recurrence, result.due, label);
   result.status = result.due ? 'scheduled' : 'unscheduled';
   for (const key of ['source', 'language', 'dateAction']) if (value[key] !== undefined) { if (!str(value[key])) fail(`некорректное поле ${key} (${label})`); result[key] = value[key]; }
@@ -87,6 +91,15 @@ export function validateImport(document) {
   for (const t of tasks) {
     if (t.projectId && !projectIds.has(t.projectId)) fail('задача ссылается на отсутствующий проект');
     if (t.sectionId && !sections.some(s => s.id === t.sectionId && s.projectId === t.projectId)) fail('раздел задачи не принадлежит её проекту');
+  }
+  for (const t of tasks) {
+    let parentId = t.parentId, seen = new Set([t.id]);
+    while (parentId) {
+      if (seen.has(parentId) || seen.size > 10) fail('цикл или слишком большая вложенность задач');
+      seen.add(parentId); const parent = tasks.find(p => p.id === parentId);
+      if (!parent || parent.projectId !== t.projectId || parent.sectionId !== t.sectionId) fail('родительская задача отсутствует или находится в другом разделе');
+      parentId = parent.parentId;
+    }
   }
   // Historical snapshots can refer to a project that was deleted before export.
   for (const h of history) {

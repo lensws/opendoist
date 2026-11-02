@@ -1,3 +1,4 @@
+import { compareTasks, descendants } from '../public/task-tree.js';
 import { DatabaseSync } from 'node:sqlite';
 import { randomUUID } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
@@ -29,7 +30,10 @@ export class Store {
       CREATE TABLE IF NOT EXISTS sections (id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE, data TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS telegram_cursors (bot TEXT PRIMARY KEY, offset INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS telegram_replies (bot TEXT NOT NULL, update_id INTEGER NOT NULL, chat_id TEXT NOT NULL, text TEXT NOT NULL, sent INTEGER NOT NULL DEFAULT 0, attempts INTEGER NOT NULL DEFAULT 0, next_attempt INTEGER NOT NULL, PRIMARY KEY(bot,update_id));
-      PRAGMA user_version=4;`);
+      CREATE TABLE IF NOT EXISTS attachments (id TEXT PRIMARY KEY, task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE, name TEXT NOT NULL, data BLOB NOT NULL, created_at TEXT NOT NULL);
+      CREATE INDEX IF NOT EXISTS attachments_task ON attachments(task_id);
+      CREATE TABLE IF NOT EXISTS backup_config (id INTEGER PRIMARY KEY CHECK(id=1), data TEXT NOT NULL);
+      PRAGMA user_version=5;`);
   }
   projects() { return this.db.prepare('SELECT data FROM projects ORDER BY rowid').all().map((r, index) => ({ ...JSON.parse(r.data), position: JSON.parse(r.data).position ?? index })).sort((a,b) => a.position-b.position); }
   reorderProjects(ids, previousIds) {
@@ -128,6 +132,15 @@ export class Store {
       if (newProjects.length || newSections.length) { result.projects = newProjects.length; result.sections = newSections.length; }
       // Reject section identity collisions rather than silently moving imported tasks.
       for (const s of document.sections) if (this.sections().some(e => e.id === s.id && e.projectId !== s.projectId)) throw new AppError(400, 'Раздел из файла уже принадлежит другому проекту');
+      const combined = new Map([...this.list(), ...fresh].map(t => [t.id, t]));
+      for (const task of fresh) {
+        const seen = new Set([task.id]); let parentId = task.parentId;
+        while (parentId) {
+          const parent = combined.get(parentId);
+          if (seen.has(parentId) || seen.size > 10 || !parent || (parent.projectId ?? null) !== (task.projectId ?? null) || (parent.sectionId ?? null) !== (task.sectionId ?? null)) throw new AppError(400, 'Вложенность импортированных задач несовместима с существующими задачами');
+          seen.add(parentId); parentId = parent.parentId;
+        }
+      }
       if (!preview) {
         const nextPosition = Math.max(-1, ...this.projects().map(p => p.position)) + 1;
         newProjects.forEach((p, index) => this.db.prepare('INSERT INTO projects (id,data) VALUES (?,?)').run(p.id, JSON.stringify({ ...p, position: nextPosition + index })));
@@ -146,12 +159,59 @@ export class Store {
       this.db.exec('COMMIT'); return result;
     } catch (error) { this.db.exec('ROLLBACK'); throw error; }
   }
+  backupConfig() { const row = this.db.prepare('SELECT data FROM backup_config WHERE id=1').get(); return row ? JSON.parse(row.data) : null; }
+  saveBackupConfig(config) { this.db.prepare('INSERT INTO backup_config VALUES (1,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data').run(JSON.stringify(config)); }
+  attachments(id) { this.get(id); return this.db.prepare('SELECT id,name,length(data) AS size,created_at AS createdAt FROM attachments WHERE task_id=? ORDER BY created_at').all(id); }
+  addAttachment(id, name, data) {
+    this.get(id);
+    if (typeof name !== 'string' || !name.trim() || name.length > 200 || /[\x00-\x1f\x7f/\\]/.test(name)) throw new AppError(400, 'Некорректное имя файла');
+    if (data.length > 20 * 1024 * 1024) throw new AppError(413, 'Файл больше 20 МБ');
+    if (this.attachments(id).length >= 20) throw new AppError(400, 'Не более 20 файлов на задачу');
+    const fileId = randomUUID();
+    this.db.prepare('INSERT INTO attachments VALUES (?,?,?,?,?)').run(fileId, id, name, data, new Date().toISOString());
+    return this.attachments(id).find(f => f.id === fileId);
+  }
+  moveTask(id, body) {
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      const all = this.list(), task = this.get(id), subtree = descendants(all, id);
+      const scope = all.filter(t => (t.projectId ?? null) === (task.projectId ?? null));
+      const snapshot = items => JSON.stringify(items.map(t => [t.id, t.revision]).sort((a,b) => a[0].localeCompare(b[0])));
+      if (!Array.isArray(body.previous) || body.previous.some(t => !t || typeof t.id !== 'string' || !Number.isInteger(t.revision)) || snapshot(scope) !== snapshot(body.previous)) throw new AppError(409, 'Список изменился. Обновите его и повторите перемещение.');
+      const parentId = body.parentId ?? null;
+      if (parentId !== null && (typeof parentId !== 'string' || !/^[a-f0-9-]{36}$/.test(parentId))) throw new AppError(400, 'Некорректная родительская задача');
+      const parent = parentId ? this.get(parentId) : null;
+      if (parent && (parent.id === id || subtree.has(parent.id))) throw new AppError(400, 'Нельзя вложить задачу в себя или её дочернюю задачу');
+      if (parent && (parent.completedAt || (parent.projectId ?? null) !== (task.projectId ?? null))) throw new AppError(400, 'Выберите незавершённую задачу в том же проекте');
+      const sectionId = parent ? parent.sectionId ?? null : body.sectionId === undefined ? task.sectionId ?? null : body.sectionId;
+      this.placement(task.projectId ?? null, sectionId);
+      let depth = 0, ancestor = parent;
+      while (ancestor) { if (++depth > 10) throw new AppError(400, 'Не более 10 уровней вложенности'); ancestor = all.find(t => t.id === ancestor.parentId); }
+      for (const child of all.filter(t => subtree.has(t.id))) {
+        let d = depth + 1, a = child; while (a.parentId && a.parentId !== id) { d++; a = all.find(t => t.id === a.parentId); }
+        if (d > 10) throw new AppError(400, 'Не более 10 уровней вложенности');
+      }
+      const siblings = all.filter(t => t.id !== id && (t.parentId ?? null) === parentId && (t.projectId ?? null) === (task.projectId ?? null) && (t.sectionId ?? null) === sectionId).sort(compareTasks);
+      const index = body.beforeId == null ? siblings.length : siblings.findIndex(t => t.id === body.beforeId);
+      if (index < 0) throw new AppError(400, 'Место перемещения не найдено');
+      siblings.splice(index, 0, { ...task, parentId, sectionId });
+      const changed = new Map(siblings.map((t, position) => [t.id, { ...t, position }]));
+      for (const t of all) if (subtree.has(t.id)) changed.set(t.id, { ...t, sectionId });
+      for (const t of changed.values()) { const old=all.find(previous => previous.id===t.id); if (JSON.stringify(t)!==JSON.stringify(old)) this.writeTask({ ...t, revision:t.revision + 1, updatedAt:new Date().toISOString() }); }
+      this.db.exec('COMMIT'); return this.get(id);
+    } catch (error) { this.db.exec('ROLLBACK'); throw error; }
+  }
+  writeTask(task) { this.db.prepare('UPDATE tasks SET data=?,revision=? WHERE id=?').run(JSON.stringify(task), task.revision, task.id); }
   close() { this.db.close(); }
   list() { return this.db.prepare('SELECT data FROM tasks').all().map(r => JSON.parse(r.data)).sort((a, b) => b.createdAt.localeCompare(a.createdAt)); }
   get(id) { const row = this.db.prepare('SELECT data FROM tasks WHERE id=?').get(id); if (!row) throw new AppError(404, 'Задача не найдена'); return JSON.parse(row.data); }
   create(parsed) {
     const now = new Date().toISOString();
-    const task = { ...parsed, id: randomUUID(), revision: 1, createdAt: now, updatedAt: now, completedAt: null };
+    if (parsed.parentId != null && (typeof parsed.parentId !== 'string' || !/^[a-f0-9-]{36}$/.test(parsed.parentId))) throw new AppError(400, 'Некорректная родительская задача');
+    const parent = parsed.parentId ? this.get(parsed.parentId) : null;
+    if (parent?.completedAt) throw new AppError(400, 'Родительская задача уже выполнена');
+    let ancestor = parent, depth = 0; while (ancestor) { if (++depth > 10) throw new AppError(400, 'Не более 10 уровней вложенности'); ancestor = ancestor.parentId ? this.get(ancestor.parentId) : null; }
+    const task = { description: '', projectId:null, sectionId:null, parentId: null, position: -Date.now(), ...parsed, ...(parent ? { projectId:parent.projectId, sectionId:parent.sectionId } : {}), id: randomUUID(), revision: 1, createdAt: now, updatedAt: now, completedAt: null };
     this.db.prepare('INSERT INTO tasks VALUES (?,?,?)').run(task.id, JSON.stringify(task), 1);
     return task;
   }
@@ -161,8 +221,16 @@ export class Store {
       const task = this.get(id);
       if (task.revision !== revision) throw new AppError(409, 'Задача изменилась в другом окне. Обновите список.');
       const next = change(task);
-      if (next === null) this.db.prepare('DELETE FROM tasks WHERE id=?').run(id);
+      if (next === null) {
+        for (const child of this.list().filter(t => t.parentId === id)) this.writeTask({ ...child, parentId:task.parentId ?? null, revision:child.revision + 1 });
+        this.db.prepare('DELETE FROM tasks WHERE id=?').run(id);
+      }
       else {
+        if ((next.projectId ?? null) !== (task.projectId ?? null) || (next.sectionId ?? null) !== (task.sectionId ?? null)) {
+          next.parentId = null;
+          const all = this.list(), children = descendants(all, id);
+          for (const child of all.filter(t => children.has(t.id))) this.writeTask({ ...child, projectId:next.projectId, sectionId:next.sectionId, revision:child.revision + 1, updatedAt:new Date().toISOString() });
+        }
         next.revision = task.revision + 1; next.updatedAt = new Date().toISOString();
         this.db.prepare('UPDATE tasks SET data=?,revision=? WHERE id=?').run(JSON.stringify(next), next.revision, id);
       }

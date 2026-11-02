@@ -292,3 +292,30 @@ test('calendar reschedule endpoint rejects unauthenticated and stale changes', a
   assert.equal((await app.request(url,{revision:task.revision,date:'2027-01-06'})).response.status,409);
   assert.equal((await app.request(url,{revision:moved.data.task.revision,date:null})).data.task.due,null);
 });
+
+test('task descriptions and attachments: authenticated binary upload/download/delete', async t => {
+ const app=await start(); t.after(()=>app.close()); const login=await app.login(); const cookie=login.response.headers.get('set-cookie').split(';')[0];
+ let task=(await app.request('/api/tasks',{source:'Files task',description:'**Description**'})).data.task;
+ assert.equal(task.description,'**Description**');
+ const edited=await app.request(`/api/tasks/${task.id}`,{title:task.title,description:'New\n- note',revision:task.revision},'PATCH'); assert.equal(edited.response.status,200);task=edited.data.task;
+ const url=`${app.base}/api/tasks/${task.id}/attachments`;
+ const headers={'Content-Type':'application/octet-stream','X-File-Name':encodeURIComponent('файл.txt')};
+ assert.equal((await fetch(url,{method:'POST',headers,body:'hello'})).status,401);
+ assert.equal((await fetch(url,{method:'POST',headers:{...headers,Cookie:cookie,Origin:'https://evil.example'},body:'hello'})).status,403);
+ const uploaded=await fetch(url,{method:'POST',headers:{...headers,Cookie:cookie},body:'hello'}); assert.equal(uploaded.status,201); const file=(await uploaded.json()).file;
+ const download=await fetch(`${url}/${file.id}`,{headers:{Cookie:cookie}});assert.equal(await download.text(),'hello'); assert.equal(download.headers.get('content-type'),'application/octet-stream'); assert.match(download.headers.get('content-disposition'),/^attachment;/);
+ assert.equal((await fetch(url,{method:'POST',headers:{...headers,Cookie:cookie,'X-File-Name':'..%2Fsecret'},body:'x'})).status,400);
+ const other=(await app.request('/api/tasks',{source:'Other file task'})).data.task;
+ assert.equal((await fetch(`${app.base}/api/tasks/${other.id}/attachments/${file.id}`,{headers:{Cookie:cookie}})).status,404);
+ assert.equal((await app.request(`/api/tasks/${task.id}/attachments/${file.id}`,{},'DELETE')).response.status,200);
+ assert.equal((await app.request(`/api/tasks/${task.id}/attachments`)).data.files.length,0);
+});
+
+test('backup API hides credentials and task move API rejects stale state',async t=>{
+ const app=await start();t.after(()=>app.close());assert.equal((await app.request('/api/backups')).response.status,401);await app.login();
+ const saved=await app.request('/api/backups',{target:'s3',bucket:'test-bucket',accessKeyId:'key',secretAccessKey:'secret'},'PATCH');assert.equal(saved.response.status,200);assert.equal(saved.data.config.hasCredentials,true);assert.equal(saved.data.config.secretAccessKey,undefined);
+ const a=(await app.request('/api/tasks',{source:'Parent'})).data.task,b=(await app.request('/api/tasks',{source:'Child'})).data.task;
+ const previous=(await app.request('/api/tasks')).data.tasks;
+ const moved=await app.request(`/api/tasks/${b.id}/move`,{previous,parentId:a.id});assert.equal(moved.response.status,200);assert.equal(moved.data.task.parentId,a.id);
+ assert.equal((await app.request(`/api/tasks/${a.id}/move`,{previous,parentId:null})).response.status,409);
+});

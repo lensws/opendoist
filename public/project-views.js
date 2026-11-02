@@ -1,3 +1,4 @@
+import { markdown } from './markdown.js';
 import { calendarRange, nextAnchor, calendarTaskDate, calendarClock } from './calendar-model.js';
 const node = (tag, cls = '', text = '') => { const el = document.createElement(tag); el.className = cls; el.textContent = text; return el; };
 const button = (text, label, action, cls = 'secondary') => { const el = node('button', cls, text); el.type = 'button'; el.setAttribute('aria-label', label); el.addEventListener('click', action); return el; };
@@ -79,7 +80,7 @@ export function initProjectViews({ api, reload, redraw, today, getTimezone, make
     const card = node('article', 'calendar-card'); draggable(card, task);
     const title = `${projected?.time ? projected.time + ' · ' : ''}${task.recurrence ? '↻ ' : ''}${task.title}`;
     const check = button('○', `Выполнить задачу: ${task.title}`, () => completeTask(task, check), 'calendar-complete'); card.append(check);
-    card.append(button(title, `Редактировать задачу ${task.title}`, () => editTask(task), 'calendar-task-title'));
+    const titleButton = button(title, `Редактировать задачу ${task.title}`, () => editTask(task), 'calendar-task-title'); titleButton.innerHTML = markdown(title); card.append(titleButton);
     // Full editor also offers date and project changes for touch and keyboard users.
     card.title = title + (task.recurrence ? ' (ближайшее повторение)' : '');
     return card;
