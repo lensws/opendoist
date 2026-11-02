@@ -3,6 +3,7 @@ import { initTransfer } from './transfer.js';
 import { initNotifications } from './notifications.js';
 const $ = selector => document.querySelector(selector);
 let tasks = [], history = [], projects = [], sections = [], view = 'all', preview = null, editTask = null, previewSequence = 0, timer, toastTimer;
+let composerOpen = false;
 let settings;
 try { settings = JSON.parse(localStorage.getItem('opendoist.settings')) || {}; } catch { settings = {}; }
 settings = { timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Moscow', language: 'auto', ...settings, ...window.OpenDoistAppearance.normalize(settings) };
@@ -71,7 +72,7 @@ function render() {
   const list = $('#task-list'); list.replaceChildren();
   $('#empty h2').textContent = query ? 'Ничего не найдено' : view === 'today' ? 'На сегодня всё' : view === 'completed' ? 'Первые победы впереди' : view === 'history' ? 'История пока пуста' : 'Здесь пока спокойно';
   $('#empty p').textContent = query ? 'Попробуйте другое название.' : view === 'today' ? 'Можно выдохнуть — или выбрать следующий шаг.' : ['completed', 'history'].includes(view) ? 'Завершённые задачи появятся здесь.' : 'Добавьте задачу. Даже большой план начинается с маленького шага.';
-  $('#add-form').hidden = ['completed', 'history'].includes(view); $('#examples').hidden = $('#add-form').hidden;
+  syncComposer();
   if (view === 'history') {
     const rows = history.filter(h => h.task.title.toLocaleLowerCase().includes(query));
     for (const item of rows) { const row = node('article', 'task done'); row.append(node('span', 'task-check', '✓')); const content = node('div', 'task-main'); content.append(node('div', 'task-title', item.task.title), meta(item.task), node('div', 'task-meta', `Выполнено ${new Date(item.completedAt).toLocaleString('ru', { timeZone: settings.timezone })}`)); row.append(content); list.append(row); }
@@ -118,7 +119,8 @@ async function refreshPreview() {
   const sequence = ++previewSequence; preview = null; $('#add-submit').disabled = true;
   const source = $('#task-input').value.trim(); const el = $('#preview');
   el.className = 'preview';
-  if (!source) { el.textContent = '✦ Пишите как думаете — дату и повторение распознаем сами.'; return; }
+  el.hidden = !source;
+  if (!source) { el.textContent = ''; return; }
   el.textContent = 'Распознаём дату…';
   try {
     const result = await api('/parse', { method: 'POST', body: { source, ...settings } });
@@ -132,13 +134,22 @@ $('#task-input').addEventListener('input', () => { previewSequence++; preview = 
 $('#add-form').addEventListener('submit', async event => {
   event.preventDefault(); if (!preview || preview.source !== $('#task-input').value.trim()) return;
   $('#add-submit').disabled = true;
-  try { await api('/tasks', { method: 'POST', body: { source: preview.source, reference: preview.reference, ...settings, ...projectUI.placement('add') } }); $('#task-input').value = ''; await refreshPreview(); await load(); $('#task-input').focus(); notify('Задача добавлена'); }
+  try { await api('/tasks', { method: 'POST', body: { source: preview.source, reference: preview.reference, ...settings, ...projectUI.placement('add') } }); $('#task-input').value = ''; await refreshPreview(); composerOpen = false; await load(); $('#add-open').focus(); notify('Задача добавлена'); }
   catch (e) { $('#page-error').textContent = e.message; $('#add-submit').disabled = false; }
 });
-document.querySelectorAll('[data-example]').forEach(el => el.addEventListener('click', () => { $('#task-input').value = el.dataset.example; $('#task-input').focus(); refreshPreview(); }));
 document.querySelectorAll('[data-view]').forEach(el => el.addEventListener('click', async () => { view = el.dataset.view; try { await load(); } catch (e) { $('#page-error').textContent = e.message; } }));
 $('#search').addEventListener('input', render);
-function focusAdd() { if (['completed', 'history'].includes(view)) { view = 'all'; render(); } $('#task-input').focus(); }
+function syncComposer() {
+  const unavailable = ['completed', 'history'].includes(view);
+  $('#add-form').hidden = unavailable || !composerOpen;
+  $('#add-open').hidden = unavailable || composerOpen;
+  $('#add-open').setAttribute('aria-expanded', String(composerOpen && !unavailable));
+}
+function focusAdd() { if (['completed', 'history'].includes(view)) { view = 'all'; render(); } composerOpen = true; syncComposer(); $('#task-input').focus(); }
+function closeComposer() { composerOpen = false; syncComposer(); $('#add-open').focus(); }
+$('#add-open').addEventListener('click', focusAdd);
+$('#add-cancel').addEventListener('click', closeComposer);
+$('#add-form').addEventListener('keydown', event => { if (event.key === 'Escape') { event.preventDefault(); closeComposer(); } });
 $('#focus-add').addEventListener('click', focusAdd);
 document.addEventListener('keydown', event => { if (event.key.toLowerCase() === 'n' && !event.ctrlKey && !event.metaKey && !event.altKey && !/INPUT|TEXTAREA|SELECT/.test(event.target.tagName) && !document.querySelector('dialog[open]') && !$('#workspace').hidden) { event.preventDefault(); focusAdd(); } });
 function notify(message, undo = null) {

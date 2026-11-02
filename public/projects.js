@@ -35,7 +35,23 @@ export function initProjects({ api, getData, reload, selectView, notify }) {
       button.append(icon(entity), node('span', entity.name, 'project-name'), node('span', String(count), 'count'));
       button.addEventListener('click', () => selectView(`${type}:${entity.id}`));
       const edit = node('button', '⋯', 'icon-button'); edit.type = 'button'; edit.setAttribute('aria-label', `Изменить ${type === 'project' ? 'проект' : 'раздел'} ${entity.name}`); edit.addEventListener('click', () => open(entity, type));
-      line.append(button, edit); list.append(line);
+      line.append(button);
+      if (type === 'project') {
+        const index = projects.findIndex(p => p.id === entity.id);
+        for (const [delta, symbol, label] of [[-1, '↑', 'вверх'], [1, '↓', 'вниз']]) {
+          const move = node('button', symbol, 'icon-button project-move'); move.type = 'button';
+          move.title = `Переместить проект ${entity.name} ${label}`; move.setAttribute('aria-label', move.title);
+          move.disabled = index + delta < 0 || index + delta >= projects.length;
+          move.addEventListener('click', async () => {
+            const previousIds = projects.map(p => p.id), ids = [...previousIds];
+            [ids[index], ids[index + delta]] = [ids[index + delta], ids[index]];
+            list.querySelectorAll('.project-move').forEach(b => b.disabled = true);
+            try { await api('/projects/order', { method: 'PATCH', body: { ids, previousIds } }); await reload(); }
+            catch (e) { notify(e.message); await reload(); }
+          }); line.append(move);
+        }
+      }
+      line.append(edit); list.append(line);
     };
     for (const p of projects) { row(p, 'project'); for (const s of sections.filter(s => s.projectId === p.id)) row(s, 'section'); }
     let p = $('#add-project').value, s = $('#add-section').value;

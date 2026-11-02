@@ -31,7 +31,18 @@ export class Store {
       CREATE TABLE IF NOT EXISTS telegram_replies (bot TEXT NOT NULL, update_id INTEGER NOT NULL, chat_id TEXT NOT NULL, text TEXT NOT NULL, sent INTEGER NOT NULL DEFAULT 0, attempts INTEGER NOT NULL DEFAULT 0, next_attempt INTEGER NOT NULL, PRIMARY KEY(bot,update_id));
       PRAGMA user_version=4;`);
   }
-  projects() { return this.db.prepare('SELECT data FROM projects ORDER BY rowid').all().map(r => JSON.parse(r.data)); }
+  projects() { return this.db.prepare('SELECT data FROM projects ORDER BY rowid').all().map((r, index) => ({ ...JSON.parse(r.data), position: JSON.parse(r.data).position ?? index })).sort((a,b) => a.position-b.position); }
+  reorderProjects(ids, previousIds) {
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      const projects = this.projects(), current = projects.map(p => p.id);
+      if (!Array.isArray(ids) || ids.length !== current.length || new Set(ids).size !== ids.length || ids.some(id => !current.includes(id))) throw new AppError(400, 'Передайте все проекты без повторений');
+      if (JSON.stringify(previousIds) !== JSON.stringify(current)) throw new AppError(409, 'Порядок изменён в другом окне. Обновите список.');
+      const update = this.db.prepare('UPDATE projects SET data=? WHERE id=?');
+      ids.forEach((id, position) => update.run(JSON.stringify({ ...projects.find(p => p.id === id), position }), id));
+      this.db.exec('COMMIT'); return this.projects();
+    } catch (error) { this.db.exec('ROLLBACK'); throw error; }
+  }
   sections() { return this.db.prepare('SELECT data FROM sections ORDER BY rowid').all().map(r => JSON.parse(r.data)); }
   placement(projectId = null, sectionId = null) {
     if (projectId !== null && !this.projects().some(p => p.id === projectId)) throw new AppError(400, 'Проект не найден');
@@ -49,7 +60,7 @@ export class Store {
     if (kind === 'section') this.placement(projectId, null);
     if (kind === 'section' && !projectId) throw new AppError(400, 'Выберите проект');
     if (list.some(e => e.id !== id && (kind === 'project' || e.projectId === projectId) && e.name.toLocaleLowerCase() === fields.name.toLocaleLowerCase())) throw new AppError(409, 'Такое название уже существует');
-    const entity = { id: id || randomUUID(), ...fields, revision: (old?.revision || 0) + 1, ...(kind === 'section' ? { projectId } : {}) };
+    const entity = { id: id || randomUUID(), ...fields, revision: (old?.revision || 0) + 1, ...(kind === 'section' ? { projectId } : { position: old?.position ?? (id ? list.find(p => p.id === id).position : Math.max(-1, ...list.map(p => p.position)) + 1) }) };
     if (kind === 'project') this.db.prepare('INSERT INTO projects (id,data) VALUES (?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data').run(entity.id, JSON.stringify(entity));
     else this.db.prepare('INSERT INTO sections (id,project_id,data) VALUES (?,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data').run(entity.id, projectId, JSON.stringify(entity));
     return entity;
@@ -109,7 +120,8 @@ export class Store {
       // Reject section identity collisions rather than silently moving imported tasks.
       for (const s of document.sections) if (this.sections().some(e => e.id === s.id && e.projectId !== s.projectId)) throw new AppError(400, 'Раздел из файла уже принадлежит другому проекту');
       if (!preview) {
-        for (const p of newProjects) this.db.prepare('INSERT INTO projects (id,data) VALUES (?,?)').run(p.id, JSON.stringify(p));
+        const nextPosition = Math.max(-1, ...this.projects().map(p => p.position)) + 1;
+        newProjects.forEach((p, index) => this.db.prepare('INSERT INTO projects (id,data) VALUES (?,?)').run(p.id, JSON.stringify({ ...p, position: nextPosition + index })));
         for (const s of newSections) this.db.prepare('INSERT INTO sections (id,project_id,data) VALUES (?,?,?)').run(s.id, s.projectId, JSON.stringify(s));
         const reminderIds = new Map(), importedAt = Date.now();
         const prepare = task => ({ ...task, reminders: task.reminders.map(r => {

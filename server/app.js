@@ -98,6 +98,7 @@ export function createApp({ password, database = './data/opendoist.sqlite', publ
         return send(200, { ok: true });
       }
       if (path === '/api/projects' && method === 'GET') return send(200, { projects: store.projects(), sections: store.sections() });
+      if (path === '/api/projects/order' && method === 'PATCH') { const body = await readJSON(req); return send(200, { projects: store.reorderProjects(body.ids, body.previousIds) }); }
       const entityMatch = /^\/api\/(projects|sections)(?:\/([a-f0-9-]+))?$/.exec(path);
       if (entityMatch && ['POST', 'PATCH', 'DELETE'].includes(method)) {
         const [, collection, id] = entityMatch, body = await readJSON(req), kind = collection === 'projects' ? 'project' : 'section';

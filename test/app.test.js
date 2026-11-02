@@ -240,3 +240,25 @@ test('projects and sections support icons, revision checks, task moves, export a
   task = app.store.get(task.id); assert.equal(task.projectId, null); assert.equal(task.title, 'Отчёт');
   assert.equal((await app.request('/api/projects')).data.projects.length, 0);
 });
+
+test('project ordering persists, rejects stale lists and survives edits and imports', async t => {
+  const dir = mkdtempSync(join(tmpdir(), 'opendoist-order-')); t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const database = join(dir, 'tasks.sqlite');
+  const app = await start(database); await app.login();
+  const fields = { iconType: 'color', color: '#112233' };
+  const a = (await app.request('/api/projects', { ...fields, name: 'A' })).data.entity;
+  const b = (await app.request('/api/projects', { ...fields, name: 'B' })).data.entity;
+  assert.equal((await app.request('/api/projects/order', { ids: [a.id, a.id], previousIds: [a.id,b.id] }, 'PATCH')).response.status, 400);
+  assert.equal((await app.request('/api/projects/order', { ids: [b.id,a.id], previousIds: [a.id,b.id] }, 'PATCH')).response.status, 200);
+  assert.equal((await app.request('/api/projects/order', { ids: [a.id,b.id], previousIds: [a.id,b.id] }, 'PATCH')).response.status, 409);
+  await app.request(`/api/projects/${b.id}`, { ...fields, name: 'B edited', revision: b.revision }, 'PATCH');
+  const c = (await app.request('/api/projects', { ...fields, name: 'C' })).data.entity;
+  assert.deepEqual((await app.request('/api/projects')).data.projects.map(p => p.id), [b.id,a.id,c.id]);
+  const exported = (await app.request('/api/export')).data;
+  await app.close();
+  const reopened = await start(database); t.after(() => reopened.close()); await reopened.login();
+  assert.deepEqual((await reopened.request('/api/projects')).data.projects.map(p => p.id), [b.id,a.id,c.id]);
+  const target = await start(); t.after(() => target.close()); await target.login();
+  await target.request('/api/import', exported);
+  assert.deepEqual((await target.request('/api/projects')).data.projects.map(p => p.id), [b.id,a.id,c.id]);
+});

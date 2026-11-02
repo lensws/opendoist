@@ -162,3 +162,6 @@ input[type=checkbox], input[type=radio] { accent-color: var(--accent); }
 #entity-dialog .emoji-selection label { margin:0; flex:1; }
 #entity-dialog .emoji-selection input { margin-top:7px; }
 #emoji-more, #emoji-retry { margin-top:10px; }
+
+.add-inline{display:flex;align-items:center;gap:12px;border:0;background:transparent;color:var(--muted);padding:14px 0;font-size:14px}.add-inline span{color:var(--accent-ink);font-size:24px}.add-inline:hover{color:var(--accent-ink)}
+#add-form{margin-top:14px}#add-cancel{margin:10px 14px}.project-row .project-move{width:21px;flex-shrink:0;font-size:14px}.project-move:disabled{cursor:default;opacity:.2}
