@@ -212,3 +212,8 @@ input[type=checkbox], input[type=radio] { accent-color: var(--accent); }
   .task:not(.board-card) .task-actions{grid-column:-2/-1;flex-wrap:wrap;justify-content:flex-start}
   .task-drag{align-self:start;padding:0;font-size:18px}.task-drop-child::after{grid-column:-2/-1}
 }
+
+/* A non-interactive copy follows the pointer while the source keeps its place. */
+.task.task-drag-preview{position:fixed;z-index:1000;margin:0;opacity:1;background:var(--surface);color:var(--text);border:1px solid var(--line);border-radius:10px;padding:16px 12px;box-shadow:0 12px 32px #0005,0 2px 6px #0003;pointer-events:none;overflow:hidden}
+.task-drag-preview *{pointer-events:none!important}.task-drag-preview .task-actions{visibility:hidden}.task-drag-preview .task-drag{opacity:0}
+.task-drag-active,.task-drag-active *{cursor:grabbing!important;user-select:none!important}.task-drag-active .task.dragging{opacity:.2}

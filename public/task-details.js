@@ -25,15 +25,36 @@ export function initTaskDetails({ api, getTasks, reload, notify }) {
       if (e.key === 'ArrowLeft' && task.parentId) { const parent = getTasks().find(t => t.id === task.parentId); move(task, {parentId:parent?.parentId ?? null}); }
     });
     let pointer = null;
+    function cancelDrag(event) {
+      if (event.type === 'keydown' && event.key !== 'Escape') return;
+      if (event.type === 'keydown') event.preventDefault();
+      if (pointer) finish({pointerId:pointer.id,type:'cancel'});
+    }
+    function updateDragCard(event) {
+      if (!pointer.card) {
+        const rect = row.getBoundingClientRect();
+        const card = row.cloneNode(true);
+        card.classList.add('task-drag-preview');
+        card.setAttribute('aria-hidden', 'true'); card.inert = true;
+        card.removeAttribute('id'); card.querySelectorAll('[id]').forEach(el => el.removeAttribute('id'));
+        card.style.width = `${rect.width}px`;
+        pointer.offsetX = pointer.x - rect.left; pointer.offsetY = pointer.y - rect.top;
+        pointer.card = card; document.body.append(card);
+        document.body.classList.add('task-drag-active');
+      }
+      pointer.card.style.left = `${Math.max(8, Math.min(event.clientX - pointer.offsetX, window.innerWidth - pointer.card.offsetWidth - 8))}px`;
+      pointer.card.style.top = `${event.clientY - pointer.offsetY}px`;
+    }
     handle.addEventListener('pointerdown', e => {
       if (e.button !== 0 || saving) return;
       pointer = {id:e.pointerId,x:e.clientX,y:e.clientY,patch:null};
       handle.setPointerCapture(e.pointerId);
+      window.addEventListener('keydown',cancelDrag); window.addEventListener('blur',cancelDrag);
     });
     handle.addEventListener('pointermove', e => {
       if (!pointer || pointer.id !== e.pointerId) return;
       if (!dragging && Math.hypot(e.clientX-pointer.x,e.clientY-pointer.y) < 6) return;
-      e.preventDefault(); dragging=task; row.classList.add('dragging'); clear(); pointer.patch=null;
+      e.preventDefault(); updateDragCard(e); dragging=task; row.classList.add('dragging'); clear(); pointer.patch=null;
       const targetRow=document.elementFromPoint(e.clientX,e.clientY)?.closest('[data-task-id]');
       const target=targetRow && entries.find(t=>t.id===targetRow.dataset.taskId);
       if (!target || target.id===task.id || descendants(getTasks(),task.id).has(target.id)) return;
@@ -51,11 +72,14 @@ export function initTaskDetails({ api, getTasks, reload, notify }) {
     });
     function finish(e) {
       if(!pointer || pointer.id!==e.pointerId) return;
-      const patch=pointer.patch; pointer=null; dragging=null; clear(); row.classList.remove('dragging');
+      const patch=pointer.patch; pointer.card?.remove();
+      document.body.classList.remove('task-drag-active');
+      window.removeEventListener('keydown',cancelDrag); window.removeEventListener('blur',cancelDrag);
+      pointer=null; dragging=null; clear(); row.classList.remove('dragging');
       if(handle.hasPointerCapture(e.pointerId)) handle.releasePointerCapture(e.pointerId);
       if(e.type==='pointerup' && patch) move(task,patch);
     }
-    handle.addEventListener('pointerup',finish); handle.addEventListener('pointercancel',finish);
+    handle.addEventListener('pointerup',finish); handle.addEventListener('pointercancel',finish); handle.addEventListener('lostpointercapture',finish);
   }
   function renderPreview() { $('#description-preview').innerHTML = markdown($('#edit-description').value, true); $('#title-preview').innerHTML = markdown($('#edit-title').value); }
   $('#description-toggle').addEventListener('click', () => { preview=!preview; $('#description-preview').hidden=!preview; $('#title-preview').hidden=!preview; $('#description-toggle').textContent=preview ? 'Скрыть предпросмотр' : 'Предпросмотр Markdown'; renderPreview(); });
