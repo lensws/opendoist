@@ -1,0 +1,9 @@
+do.lensws.be {
+    encode zstd gzip
+    reverse_proxy 127.0.0.1:3000
+}
+
+beta.lensws.be {
+    encode zstd gzip
+    reverse_proxy 127.0.0.1:3001
+}

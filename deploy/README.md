@@ -2,9 +2,34 @@
 
 Личное приложение: один пароль, одно пространство задач. Пароль задаётся на сервере; регистрации и сторонних провайдеров авторизации нет. Требуются Docker Engine и Docker Compose v2. Альтернатива — Node.js 24+ и `npm start` из корня проекта.
 
+Для `do.lensws.be` и `beta.lensws.be` используйте [инструкцию двух окружений](VPS.md). Ниже — установка одного экземпляра на новый VPS.
+
+## 0. Подготовка Ubuntu 24.04
+
+Подключитесь по SSH. Следующие команды выполняются от root на чистом сервере:
+
+```sh
+apt-get update
+apt-get install -y docker.io docker-compose-v2 caddy git ca-certificates
+systemctl enable --now docker caddy
+docker --version
+docker compose version
+```
+
+На сервере должны быть доступны входящие TCP-порты 80 и 443 для HTTPS и выпуска сертификатов; сохраните доступ по SSH. Проверьте также firewall в панели VPS. Порт приложения 3000 открывать наружу не нужно. Если домен имеет AAAA-запись, IPv6 тоже должен вести на этот сервер и принимать HTTP/HTTPS.
+
 ## 1. Запуск
 
-Скопируйте проект на сервер и выполните в его каталоге:
+Получите исходники и закрепите конкретную версию. Команды ниже предназначены для новой установки; для существующей используйте раздел об обновлении.
+
+```sh
+mkdir -p /opt
+git clone https://github.com/lensws/opendoist.git /opt/opendoist
+cd /opt/opendoist
+git checkout --detach "$(git rev-parse origin/main)"
+```
+
+Создайте конфигурацию:
 
 ```sh
 cp .env.example .env
@@ -40,13 +65,19 @@ PUBLIC_URL=https://tasks.example.com
 COOKIE_SECURE=true
 ```
 
-Затем:
+Затем установите конфигурацию Caddy. На сервере с другими сайтами добавьте блок в существующий Caddyfile вместо замены всего файла.
 
 ```sh
+cp deploy/Caddyfile /tmp/opendoist.Caddyfile
+# Откройте /tmp/opendoist.Caddyfile в редакторе и замените домен.
+caddy validate --config /tmp/opendoist.Caddyfile --adapter caddyfile
+cp /etc/caddy/Caddyfile /etc/caddy/Caddyfile.before-opendoist
+install -m 644 /tmp/opendoist.Caddyfile /etc/caddy/Caddyfile
 docker compose up -d
-sudo caddy validate --config /etc/caddy/Caddyfile
-sudo systemctl reload caddy
+systemctl reload caddy
 ```
+
+Caddy автоматически получает и продлевает сертификат, а HTTP перенаправляет на HTTPS. После запуска проверьте `https://ваш-домен/healthz` и вход в приложение.
 
 `PUBLIC_URL` должен совпадать с origin страницы в браузере (схема, домен, порт). Иначе запросы изменения данных будут отклоняться. Публикуйте приложение через HTTPS; прямой HTTP подходит для localhost/SSH-туннеля. При HTTPS Secure-cookie включается также автоматически по `PUBLIC_URL`.
 
@@ -54,11 +85,18 @@ sudo systemctl reload caddy
 
 ## 3. Обновление и смена пароля
 
-Сначала сделайте резервную копию. Обновите исходные файлы проекта и выполните:
+Сначала сделайте резервную копию. Выберите проверенный commit SHA в GitHub. В каталоге проекта:
 
 ```sh
+git rev-parse HEAD  # сохраните текущий SHA для возможного отката
+git fetch origin
+# Подставьте выбранный SHA вместо <commit-sha>.
+git checkout --detach <commit-sha>
 docker compose up -d --build
+docker compose ps
 ```
+
+Push в GitHub сам по себе не обновляет сервер. `.env` и данные в томе сохраняются при обновлении исходников.
 
 Данные сохранятся в томе. `docker compose down` оставляет том; **`docker compose down -v` удаляет его вместе со всеми задачами**.
 
@@ -100,6 +138,7 @@ docker compose start opendoist
 
 | Переменная | Назначение |
 | --- | --- |
+| `COMPOSE_PROJECT_NAME` | Постоянное имя окружения; для двух установок имена должны различаться |
 | `OPENDOIST_PASSWORD` | Обязательный пароль, минимум 12 символов |
 | `PUBLIC_URL` | Origin приложения; для production задавайте явно |
 | `COOKIE_SECURE` | `true` при HTTPS |
