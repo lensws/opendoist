@@ -1,0 +1,19 @@
+# OpenDoist — документация
+
+Личный менеджер задач и заметок для своего сервера. Один пароль, одна общая база; многопользовательского разделения нет.
+
+- [Главная](https://github.com/lensws/opendoist/wiki/Home)
+- [Установка на Linux](https://github.com/lensws/opendoist/wiki/Installation)
+- [Обновление и автообновление](https://github.com/lensws/opendoist/wiki/Updating)
+- [Работа с приложением](https://github.com/lensws/opendoist/wiki/Usage)
+- [Email и Telegram](https://github.com/lensws/opendoist/wiki/Notifications)
+- [Резервные копии](https://github.com/lensws/opendoist/wiki/Backups)
+- [Ручная установка и HTTPS](https://github.com/lensws/opendoist/wiki/Manual-installation)
+- [GitHub Actions и выпуск](https://github.com/lensws/opendoist/wiki/Deployment)
+- [Наши экземпляры на VPS](https://github.com/lensws/opendoist/wiki/VPS)
+- [Форматы повторений](https://github.com/lensws/opendoist/wiki/Recurring-dates)
+- [Разработка и API](https://github.com/lensws/opendoist/wiki/Development)
+
+Документация описывает актуальную beta; на main возможности появляются после выпуска. Стабильная версия — текущий main, тестовая — beta.
+
+[Исходники](https://github.com/lensws/opendoist) · [Проверки и выпуски](https://github.com/lensws/opendoist/actions)
