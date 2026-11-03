@@ -293,5 +293,5 @@ export class Store {
       return { ...previous, revision: task.revision };
     });
   }
-  history() { return this.db.prepare('SELECT completed_at,snapshot FROM completions ORDER BY completed_at DESC LIMIT 100').all().map(r => ({ completedAt: r.completed_at, task: JSON.parse(r.snapshot) })); }
+  history(full = false) { return this.db.prepare('SELECT completed_at,snapshot FROM completions ORDER BY completed_at DESC' + (full ? '' : ' LIMIT 100')).all().map(r => ({ completedAt: r.completed_at, task: JSON.parse(r.snapshot) })); }
 }

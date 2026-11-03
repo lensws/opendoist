@@ -415,3 +415,32 @@ test('notes larger than the old import limit round-trip without truncation', asy
   const invalid={...exported,notes:[note,{...note,id:'invalid'}]};assert.equal((await target.request('/api/import',invalid)).response.status,400);
   const legacy={version:1,tasks:[],history:[],projects:[],sections:[]};assert.equal((await target.request('/api/import',legacy)).response.status,200);
 });
+
+
+test('global search covers placements, completed tasks, full note bodies and older history with authentication', async t => {
+  const app=await start();t.after(()=>app.close());
+  assert.equal((await app.request('/api/search?q=test')).response.status,401);
+  await app.login();
+  const project=app.store.saveEntity('project',{name:'Работа',iconType:'color',color:'#c95736'});
+  const section=app.store.saveEntity('section',{name:'Релизы',projectId:project.id,iconType:'color',color:'#c95736'});
+  const task=app.store.create({title:'Обсудить',description:'Отчёт за месяц',projectId:project.id,sectionId:section.id});
+  const done=app.store.create({title:'Старый отчёт'});app.store.complete(done.id,done.revision);
+  const note=app.store.saveNote({title:'Протокол',body:'## Подробный отчёт за месяц'});
+  const search=async q=>(await app.request('/api/search?q='+encodeURIComponent(q))).data;
+  const found=await search('ОТЧЕТ');
+  assert.equal(found.groups.tasks.items[0].id,task.id);
+  assert.equal(found.groups.completed.items[0].id,done.id);
+  assert.equal(found.groups.notes.items[0].id,note.id);
+  assert.equal(found.groups.notes.items[0].body,undefined);
+  assert.equal(found.groups.history.total,1);
+  assert.equal((await search('РАБОТА')).groups.projects.items[0].id,project.id);
+  assert.equal((await search('работа')).groups.tasks.items[0].id,task.id);
+  assert.equal((await search('релизы')).groups.sections.items[0].id,section.id);
+  assert.equal((await search('месяц отчет')).groups.notes.total,1);
+  assert.equal((await search('неизвестное')).total,0);
+  assert.equal((await search('   ')).total,0);
+  assert.equal((await app.request('/api/search?q='+ 'a'.repeat(201))).response.status,400);
+  for(let i=0;i<101;i++){const item=app.store.create({title:'Повтор истории'});app.store.complete(item.id,item.revision);}
+  assert.equal((await search('Старый')).groups.history.total,1);
+  const many=await search('Повтор');assert.equal(many.groups.completed.total,101);assert.equal(many.groups.completed.items.length,50);
+});

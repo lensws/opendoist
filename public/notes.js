@@ -1,5 +1,5 @@
 import { markdown } from './markdown.js';
-export function initNotes({api, notify}) {
+export function initNotes({api, notify, onChange=()=>{}}) {
   const $=s=>document.querySelector(s), host=$('#notes-view'), dialog=$('#note-dialog');
   let notes=[], selected=null, baseline='', editing=false, saving=false, sequence=0, refreshSequence=0, openSequence=0, query='';
   const value=()=>JSON.stringify({title:$('#note-title').value,body:$('#note-body').value});
@@ -61,7 +61,7 @@ export function initNotes({api, notify}) {
     e.preventDefault(); if(saving || !editing)return; busy(true); $('#note-error').textContent='';
     try {
       const result=await api(`/notes${selected?'/'+selected.id:''}`,{method:selected?'PATCH':'POST',body:{title:$('#note-title').value,body:$('#note-body').value,revision:selected?.revision}});
-      selected=result.note; baseline=value(); $('#note-delete').hidden=false; setMode(false); await refresh(); notify('Заметка сохранена');
+      selected=result.note; baseline=value(); $('#note-delete').hidden=false; setMode(false); await refresh(); onChange(); notify('Заметка сохранена');
     }catch(e){message(e);}finally{busy(false);}
   });
   $('#note-form').addEventListener('keydown',e=>{
@@ -70,10 +70,11 @@ export function initNotes({api, notify}) {
   $('#note-delete').addEventListener('click',async()=>{
     if(!selected || saving || !confirm(`Удалить заметку «${selected.title}»?`))return;
     busy(true);$('#note-error').textContent='';
-    try{await api(`/notes/${selected.id}`,{method:'DELETE',body:{revision:selected.revision}});baseline=value();dialog.close();await refresh();notify('Заметка удалена');}
+    try{await api(`/notes/${selected.id}`,{method:'DELETE',body:{revision:selected.revision}});baseline=value();dialog.close();await refresh();onChange();notify('Заметка удалена');}
     catch(e){message(e);}finally{busy(false);}
   });
   return {
+    open,
     show(search='') {const next=search.trim().toLocaleLowerCase(), refreshNeeded=host.hidden || next===query;query=next;host.hidden=false;draw();if(refreshNeeded)refresh();},
     hide() {host.hidden=true;openSequence++;},
     reset() {sequence++;notes=[];selected=null;baseline=value();draw();host.hidden=true;},

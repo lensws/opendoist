@@ -1,3 +1,4 @@
+import { initGlobalSearch } from './global-search.js';
 import { initNotes } from './notes.js';
 import { fetchWorkspace } from './workspace-data.js';
 import { orderedTree, compareTasks } from './task-tree.js';
@@ -24,14 +25,16 @@ async function api(path, { method = 'GET', body } = {}) {
   if (!response.ok) { if (response.status === 401 && path !== '/login') showLogin(); const error = new Error(data.error || 'Не удалось выполнить запрос'); error.status = response.status; throw error; }
   return data;
 }
-const notesUI = initNotes({api,notify});
+const notesUI = initNotes({api,notify,onChange:()=>{if ($('#search').value.trim()) render();}});
 initBackups({api});
 const taskDetails = initTaskDetails({api, getTasks:() => tasks, reload:load, notify});
-const projectUI = initProjects({ api, getData: () => ({ projects, sections, tasks }), reload: load, selectView: next => { view = next; render(); }, notify });
+const projectUI = initProjects({ api, getData: () => ({ projects, sections, tasks }), reload: load, selectView: selectSearchView, notify });
 const taskInput = initTaskInput({ getProjects: () => projects, chooseProject: id => projectUI.fillPlacement('add', id, '') });
 const projectViews = initProjectViews({ api, reload:load, redraw:render, today:() => today(), getTimezone:() => settings.timezone, makeTaskRow, addTask:addInView, editTask:openEdit, completeTask, notify });
 initTransfer({ api, reload: load, notify });
 const { openReminders } = initNotifications({ api, reload: load, getSettings: () => settings, notify });
+const globalSearch = initGlobalSearch({api,openTask:id=>{const task=tasks.find(t=>t.id===id);if(task)openEdit(task);else notify('Задача больше не доступна');},openNote:id=>notesUI.open(id),selectView:selectSearchView});
+function selectSearchView(next) { $('#search').value=''; view=next; render(); }
 function node(tag, className, text) { const el = document.createElement(tag); if (className) el.className = className; if (text !== undefined) el.textContent = text; return el; }
 const todayCache = new Map();
 function today(zone = settings.timezone) {
@@ -55,7 +58,7 @@ function recurringLabel(task) {
   const spans = task.spans?.filter(s => s.kind === 'recurrence' || s.kind === 'mode');
   return spans?.length ? spans.map(s => s.text).join(' ') : 'Повторяется';
 }
-function showLogin() { notesUI.reset(); loadSequence++; $('#workspace').hidden = true; $('#login-screen').hidden = false; tasks = []; history = []; $('#task-list').replaceChildren(); for (const dialog of document.querySelectorAll('dialog[open]')) dialog.close(); }
+function showLogin() { globalSearch.hide(); notesUI.reset(); loadSequence++; $('#workspace').hidden = true; $('#login-screen').hidden = false; tasks = []; history = []; $('#task-list').replaceChildren(); for (const dialog of document.querySelectorAll('dialog[open]')) dialog.close(); }
 let loadSequence = 0;
 async function load() {
   const sequence = ++loadSequence;
@@ -87,12 +90,17 @@ function render() {
   if (!titles[view] && !entity) view = 'inbox';
   $('#view-title').textContent = entity?.name || titles[view];
   projectUI.draw(view);
+  if ($('#search').value.trim()) {
+    projectViews.configure(null,'search'); notesUI.hide();
+    $('#view-title').textContent='Поиск везде';
+    for(const selector of ['#task-list','.list-toolbar','.page-footer','#empty']) $(selector).hidden=true;
+    syncComposer();globalSearch.show($('#search').value.trim());return;
+  }
+  globalSearch.hide();
   const layout = projectViews.configure(view.startsWith('project:') ? entity : null, view, settings.views);
   $('#task-list').hidden = layout !== 'list' || view === 'notes';
   $('.list-toolbar').hidden = view === 'notes';
   $('.page-footer').hidden = view === 'notes';
-  $('#search').placeholder = view === 'notes' ? 'Найти заметку по заголовку' : 'Найти задачу';
-  $('#search').setAttribute('aria-label',view === 'notes' ? 'Поиск заметок по заголовку' : 'Поиск задач');
   document.querySelectorAll('[data-view]').forEach(el => { const active = el.dataset.view === view; el.classList.toggle('active', active); if (active) el.setAttribute('aria-current', 'page'); else el.removeAttribute('aria-current'); });
   if (view === 'notes') { $('#empty').hidden=true; syncComposer(); notesUI.show($('#search').value); return; }
   notesUI.hide();
@@ -191,15 +199,22 @@ $('#add-form').addEventListener('submit', async event => {
   try { await api('/tasks', { method: 'POST', body: { source: preview.source, reference: preview.reference, ...settings, ...projectUI.placement('add') } }); $('#task-input').value = ''; await refreshPreview(); composerOpen = false; await load(); $('#add-open').focus(); notify('Задача добавлена'); }
   catch (e) { $('#page-error').textContent = e.message; $('#add-submit').disabled = false; }
 });
-document.querySelectorAll('[data-view]').forEach(el => el.addEventListener('click', async () => { view = el.dataset.view; if ($('#settings-dialog').open) $('#settings-dialog').close(); render(); try { if (view === 'history') await load(); } catch (e) { $('#page-error').textContent = e.message; } }));
+document.querySelectorAll('[data-view]').forEach(el => el.addEventListener('click', async () => { $('#search').value=''; view = el.dataset.view; if ($('#settings-dialog').open) $('#settings-dialog').close(); render(); try { if (view === 'history') await load(); } catch (e) { $('#page-error').textContent = e.message; } }));
 $('#search').addEventListener('input', render);
+$('#search').addEventListener('keydown',event=>{if(event.key==='Escape'){event.preventDefault();$('#search').value='';render();$('#search').blur();}});
+document.addEventListener('keydown',event=>{
+  if(event.isComposing || event.altKey || event.shiftKey || $('#workspace').hidden || document.querySelector('dialog[open]'))return;
+  if((event.ctrlKey || event.metaKey) && event.code==='KeyK'){
+    event.preventDefault();$('#search').focus();$('#search').select();
+  }
+});
 function syncComposer() {
-  const unavailable = ['completed', 'history', 'notes'].includes(view);
+  const unavailable = !!$('#search').value.trim() || ['completed', 'history', 'notes'].includes(view);
   $('#add-form').hidden = unavailable || !composerOpen;
   $('#add-open').hidden = unavailable || composerOpen;
   $('#add-open').setAttribute('aria-expanded', String(composerOpen && !unavailable));
 }
-function focusAdd() { if (['completed', 'history', 'notes'].includes(view)) { view = 'inbox'; render(); } composerOpen = true; syncComposer(); $('#task-input').focus(); }
+function focusAdd() { if ($('#search').value) { $('#search').value=''; render(); } if (['completed', 'history', 'notes'].includes(view)) { view = 'inbox'; render(); } composerOpen = true; syncComposer(); $('#task-input').focus(); }
 function addInView({ projectId, sectionId = null, date = null, time = null }) {
   if ($('#task-input').value.trim()) { focusAdd(); notify('В форме есть черновик. Добавьте его или очистите текст.'); return; }
   projectUI.fillPlacement('add', projectId, sectionId); focusAdd();
