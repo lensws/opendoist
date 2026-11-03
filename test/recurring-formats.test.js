@@ -114,3 +114,18 @@ test('a passed time does not reset the workday interval to tomorrow',()=>{
   assert.equal(t.due.date,'2026-01-08');assert.equal(t.due.time,'08:00');
   assert.deepEqual(occurrences(t,{after:'2026-01-08T09:00:00+03:00',count:2}).map(d=>d.date),['2026-01-13','2026-01-16']);
 });
+
+for (const suffix of ['', ' в 09:00']) test(`Russian weekday synonyms${suffix}`, () => {
+  const options = {...settings, now:'2026-01-09T07:30:00+03:00'}; // Friday.
+  const working = parseTask(`Зарядка каждый рабочий день${suffix}`, options);
+  const weekday = parseTask(`Зарядка каждый будний день${suffix}`, options);
+  for (const task of [working, weekday]) {
+    assert.equal(task.status, 'scheduled');
+    assert.equal(task.title, 'Зарядка');
+    assert.equal(task.due.date, '2026-01-09');
+    assert.equal(task.due.time, suffix ? '09:00' : null);
+    assert.deepEqual(occurrences(task, {after:'2026-01-09T23:00:00+03:00', count:3}).map(d=>d.date), ['2026-01-12','2026-01-13','2026-01-14']);
+    assert.equal(nextAfterCompletion(task, '2026-01-09T12:00:00+03:00').date, '2026-01-12');
+  }
+  assert.equal(weekday.recurrence.rrule, working.recurrence.rrule);
+});

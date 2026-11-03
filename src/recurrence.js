@@ -6,7 +6,7 @@ const MO = `(?:${MONTHS.join('|')})\\.?`;
 const left = '(?<![\\p{L}\\p{N}])', right = '(?![\\p{L}\\p{N}])';
 const prefix = '(?:every!?|ev!?|каждые!?|каждый!?|каждую!?|каждое!?|каждая!?|кажд!?)';
 const ordinal = '(?:\\d+(?:st|nd|rd|th|-?[еийяю])?|first|last|перв(?:ый|ую|ое)|последн(?:ий|юю|ее))';
-const workday = '(?:workdays?|weekdays?|рабочи[йех] д(?:ень|ня|ней))';
+const workday = '(?:workdays?|weekdays?|(?:рабочи[йех]|будн(?:ий|ие|их)) д(?:ень|ня|ней))';
 const separator = '\\s*(?:,\\s*(?:(?:and|и)\\s+)?|\\s+(?:and|и)\\s+)';
 const weekdays = [0, 1, 2, 3, 4];
 const frequency = { days:RRule.DAILY, weeks:RRule.WEEKLY, months:RRule.MONTHLY, years:RRule.YEARLY, hours:RRule.HOURLY, minutes:RRule.MINUTELY };
