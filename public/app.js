@@ -137,7 +137,6 @@ function makeTaskRow(task) {
     check.addEventListener('click', () => completeTask(task, check));
     const content = node('div', 'task-main'); const title = node('div', 'task-title markdown'); title.innerHTML = markdown(task.title); title.addEventListener('dblclick', () => openEdit(task)); content.append(title, meta(task));
     if (task.description) { const description = node('div', 'task-description markdown'); description.innerHTML = markdown(task.description, true); content.append(description); }
-    if (task.parentId) { const parent = tasks.find(t => t.id === task.parentId); if (parent) { const label=node('div','muted small markdown'); label.innerHTML=`↳ ${markdown(parent.title)}`; content.append(label); } }
     const actions = node('div', 'task-actions');
     if (!task.completedAt) {
       const reminder = actionButton(task.reminders?.length ? `Напомнить (${task.reminders.length})` : 'Напомнить', '', () => openReminders(task), 'reminder-action');
