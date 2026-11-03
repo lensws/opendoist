@@ -238,3 +238,25 @@ input[type=checkbox], input[type=radio] { accent-color: var(--accent); }
 .view-switcher button[aria-pressed="true"]{background:var(--accent-soft);color:var(--accent-ink)}
 .view-switcher button:focus-visible{outline:2px solid var(--accent-ink);outline-offset:1px}
 .view-switcher:disabled button{opacity:.55;cursor:wait}
+
+/* Desktop task editor: content on the left, placement and schedule on the right. */
+@media(min-width:800px){
+  #edit-dialog{width:min(940px,calc(100vw - 64px));padding:0;overflow:hidden}
+  #edit-form{display:flex;flex-direction:column;max-height:calc(100dvh - 48px)}
+  #edit-form>.dialog-heading{padding:20px 24px;border-bottom:1px solid var(--line);flex-shrink:0}
+  #edit-form .edit-fields{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(280px,1fr);grid-template-areas:"title placement" "description parent" "description schedule" "files schedule";gap:14px 24px;padding:18px 24px;overflow-y:auto;min-height:0}
+  #edit-form .edit-fields>div{min-width:0}
+  .edit-title-group{grid-area:title}.edit-placement-group{grid-area:placement}.edit-parent-group{grid-area:parent}.edit-description-group{grid-area:description}.edit-files-group{grid-area:files}.edit-schedule-group{grid-area:schedule}
+  #edit-form label:not(.checkbox-label){margin:0 0 6px}
+  #edit-form input:not([type=checkbox]),#edit-form select{padding:9px 10px;font-size:13px}
+  #edit-form .form-grid{gap:10px}
+  #edit-form .small{margin:6px 0;font-size:11px;line-height:1.45}
+  #edit-form .checkbox-label{margin-top:12px}
+  #edit-description{min-height:145px;height:170px;font-size:13px;line-height:1.5}
+  #edit-form .channel-section{margin:0;padding:12px;border-radius:8px}
+  #edit-form .channel-section summary{font-size:13px}
+  #edit-form .channel-section label{margin-top:12px}
+  #description-toggle{padding:7px 10px;font-size:11px}
+  #edit-form>.dialog-actions{margin:0;padding:14px 24px;border-top:1px solid var(--line);background:var(--surface);flex-shrink:0}
+  #edit-error:not(:empty){margin:0;padding:8px 24px;flex-shrink:0}
+}
