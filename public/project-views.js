@@ -7,7 +7,7 @@ export function initProjectViews({ api, reload, redraw, today, getTimezone, make
   const controls = document.querySelector('#project-view-controls'), layout = document.querySelector('#project-layout'), scale = document.querySelector('#calendar-scale');
   const host = document.querySelector('#project-view');
   const scrollPositions = new Map();
-  let currentView = null;
+  let currentView = null, selectedLayout = 'list';
   let currentProject = null, anchor = null, dragged = null, saving = false;
   function updateCurrentTime() {
     host.querySelectorAll('.current-time-line,.current-time-label').forEach(el => el.remove());
@@ -23,11 +23,11 @@ export function initProjectViews({ api, reload, redraw, today, getTimezone, make
     }
   }
   setInterval(updateCurrentTime, 30000);
-  async function changeView() {
+  async function changeView(mode = selectedLayout) {
     if ((!currentProject && !currentView) || saving) return;
     const project = currentProject; saving = true; layout.disabled = scale.disabled = true;
     try {
-      const preference = { layout:layout.value, calendar:currentView === 'today' ? 'day' : scale.value };
+      const preference = { layout:mode, calendar:currentView === 'today' ? 'day' : scale.value };
       if (project) await api(`/projects/${project.id}/view`, { method:'PATCH', body:{ revision:project.revision, view:preference } });
       else await api('/settings', {method:'PATCH', body:{views:{[currentView]:preference}}});
       await reload();
@@ -35,7 +35,10 @@ export function initProjectViews({ api, reload, redraw, today, getTimezone, make
     catch (error) { notify(error.message); await reload(); }
     finally { saving = false; layout.disabled = scale.disabled = false; }
   }
-  layout.addEventListener('change', changeView); scale.addEventListener('change', changeView);
+  layout.querySelectorAll('[data-layout]').forEach(button => button.addEventListener('click', () => {
+    if (button.dataset.layout !== selectedLayout) changeView(button.dataset.layout);
+  }));
+  scale.addEventListener('change', () => changeView());
   function configure(project, view, preferences = {}) {
     const builtIn = ['inbox', 'today', 'upcoming'].includes(view) ? view : null;
     if (project?.id !== currentProject?.id || builtIn !== currentView) anchor = today();
@@ -44,7 +47,9 @@ export function initProjectViews({ api, reload, redraw, today, getTimezone, make
     controls.hidden = !project && !builtIn; host.hidden = true; host.replaceChildren();
     const preference = project?.view || preferences[builtIn];
     const mode = preference?.layout || 'list';
-    layout.value = mode; scale.value = builtIn === 'today' ? 'day' : preference?.calendar || 'month';
+    selectedLayout = mode;
+    layout.querySelectorAll('[data-layout]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.layout === mode)));
+    scale.value = builtIn === 'today' ? 'day' : preference?.calendar || 'month';
     scale.querySelector('[value="day"]').hidden = !!project;
     scale.querySelector('[value="day"]').disabled = !!project;
     scale.hidden = mode !== 'calendar' || builtIn === 'today';
@@ -171,6 +176,6 @@ export function initProjectViews({ api, reload, redraw, today, getTimezone, make
     if (!pending.length) unscheduled.append(node('p','muted small','Перетащите сюда задачу, чтобы убрать срок.'));
     dropZone(unscheduled, task => move(task, { date:null }, true)); host.append(unscheduled);
   }
-  function draw(tasks, sections) { host.hidden = false; if (layout.value === 'board') { if (currentProject) board(tasks, sections); else globalBoard(tasks); } else calendar(tasks); }
+  function draw(tasks, sections) { host.hidden = false; if (selectedLayout === 'board') { if (currentProject) board(tasks, sections); else globalBoard(tasks); } else calendar(tasks); }
   return { configure, draw };
 }
