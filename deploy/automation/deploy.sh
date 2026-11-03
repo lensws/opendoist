@@ -68,6 +68,13 @@ deploy_instance() (
   curl --fail --silent --show-error --retry 3 --retry-delay 3 "https://$domain/healthz"
   printf '\nDeployed %s to %s (%s)\n' "$commit" "$domain" "$tier"
   trap - ERR
+  # Keep 30 days of deployment snapshots; run only after successful activation.
+  # Match only deploy-generated names, preserving manual/pre-import copies.
+  if ! find "$backup_dir" -regextype posix-extended -maxdepth 1 -type f \
+    -regex '.*/[0-9]{8}T[0-9]{6}-[0-9a-f]{12}\.sqlite' \
+    ! -name "$backup_name" -mmin +43200 -delete; then
+    echo "Warning: backup cleanup failed for $tier; deployment succeeded." >&2
+  fi
 
 )
 for tier in "${tiers[@]}"; do

@@ -136,7 +136,7 @@
 <p class="muted small">Полная копия SQLite: задачи, вложения, история и настройки, включая сохранённые ключи каналов и S3. Храните копии в закрытой папке или приватном bucket. Пароль входа и конфигурацию сервера сохраните отдельно.</p>
 <label class="checkbox-label"><input id="backup-enabled" type="checkbox"> Создавать по расписанию</label>
 <label for="backup-frequency">Как часто</label><select id="backup-frequency"><option value="hourly">Раз в час</option><option value="daily">Раз в сутки</option><option value="weekly">Раз в неделю</option></select>
-<label for="backup-target">Куда сохранять</label><select id="backup-target"><option value="folder">Папка на сервере</option><option value="s3">S3-совместимое хранилище</option></select>
+<label for="backup-retentionDays">Хранить копии, дней</label><input id="backup-retentionDays" type="number" min="1" max="3650" step="1" required value="30"><p class="muted small">Старые копии OpenDoist удаляются после успешного создания новой. Новая копия сохраняется. Для S3 нужны права ListBucket и DeleteObject.</p><label for="backup-target">Куда сохранять</label><select id="backup-target"><option value="folder">Папка на сервере</option><option value="s3">S3-совместимое хранилище</option></select>
 <div id="backup-folder-fields"><label for="backup-folder">Абсолютный путь к папке</label><input id="backup-folder" placeholder="/app/data/backups"><p class="muted small">В Docker это путь внутри контейнера. Для другой папки сервера подключите её как volume с правом записи.</p></div>
 <div id="backup-s3-fields" hidden>
 <label for="backup-endpoint">Endpoint (пустой для AWS)</label><input id="backup-endpoint" placeholder="https://s3.example.com">
@@ -147,11 +147,11 @@
 <label for="backup-secretAccessKey">Secret access key</label><input id="backup-secretAccessKey" type="password" autocomplete="new-password"><p id="backup-credentials-note" class="muted small"></p>
 <label class="checkbox-label"><input id="backup-forcePathStyle" type="checkbox" checked> Path-style адресация (для S3-совместимых сервисов)</label>
 </div>
-<p class="muted small">Сначала сохраните параметры. Копии не удаляются автоматически: для S3 можно настроить срок хранения в bucket. Расписание работает, пока запущен сервер.</p>
+<p class="muted small">Сначала сохраните параметры. Срок хранения применяется при следующем успешном копировании. Расписание работает, пока запущен сервер.</p>
 <button id="backup-test" type="button" class="secondary">Проверить подключение</button>
-<p class="muted small">Проверяются текущие поля формы без сохранения: запись, чтение и удаление небольшого тестового файла. Задачи не отправляются. Пустые поля ключей используют сохранённые ключи.</p>
+<p class="muted small">Проверяются текущие поля формы без сохранения: запись, чтение и удаление небольшого тестового файла; для S3 — также получение списка копий. Задачи не отправляются. Пустые поля ключей используют сохранённые ключи.</p>
 <p id="backup-check-result" class="small" role="status" aria-live="polite"></p>
-<pre id="backup-status" class="small" role="status"></pre><p id="backup-error" class="error" role="alert"></p>
+<pre id="backup-status" class="small" role="status"></pre><p id="backup-cleanup-status" class="small"></p><p id="backup-error" class="error" role="alert"></p>
 <div class="dialog-actions"><button id="backup-run" type="button" class="secondary">Создать сейчас</button><button type="submit" class="primary">Сохранить</button></div>
 </form></dialog>
 <div id="toast" class="toast" role="status" hidden><span id="toast-text"></span><button id="toast-undo" hidden>Отменить</button></div>

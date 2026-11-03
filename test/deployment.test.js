@@ -55,7 +55,7 @@ case "$(basename "$0")" in
    esac ;;
 esac
 `;
-      for (const command of ['git', 'docker', 'curl', 'flock', 'install', 'chmod']) writeFileSync(join(dir, command), mock, {mode:0o700});
+      for (const command of ['git', 'docker', 'curl', 'flock', 'install', 'chmod', 'find']) writeFileSync(join(dir, command), mock, {mode:0o700});
       // Redirect only privileged environment/paths; execute the real release logic with mocked tools.
       const script = readFileSync('deploy/automation/deploy.sh', 'utf8')
         .replace('export PATH=/usr/sbin:/usr/bin:/sbin:/bin', `export PATH='${dir}':/usr/bin:/bin`)
@@ -78,10 +78,11 @@ esac
         assert.doesNotMatch(calls, /opendoist-beta/);
       }
       if (scenario === 'failure') {
+        assert.doesNotMatch(calls, /find .*enki/);
         assert.match(calls, /docker image tag old-image opendoist-enki-opendoist:latest/);
         assert.doesNotMatch(calls, /docker image tag old-image opendoist-prod/);
         assert.match(calls, new RegExp(`checkout --quiet --detach ${previous}`));
-      } else assert.match(calls, /https:\/\//);
+      } else { for(const tier of tiers) assert.match(calls,new RegExp(`find /var/backups/opendoist/${tier} .* -mmin \\+43200 -delete`)); assert.match(calls, /https:\/\//); }
     } finally { rmSync(dir, {recursive:true, force:true}); }
   }
 });

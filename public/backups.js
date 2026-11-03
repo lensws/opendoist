@@ -1,8 +1,8 @@
 const $ = s => document.querySelector(s);
 export function initBackups({api}) {
-  const fields=['enabled','target','frequency','folder','endpoint','region','bucket','prefix','forcePathStyle'];
+  const fields=['enabled','target','frequency','folder','endpoint','region','bucket','prefix','forcePathStyle','retentionDays'];
   let polling, checkSequence = 0;
-  function draft() { const body={}; for(const field of [...fields,'accessKeyId','secretAccessKey']) { const input=$(`#backup-${field}`); body[field]=input.type==='checkbox' ? input.checked : input.value; } return body; }
+  function draft() { const body={}; for(const field of [...fields,'accessKeyId','secretAccessKey']) { const input=$(`#backup-${field}`); body[field]=input.type==='checkbox' ? input.checked : input.type==='number' ? Number(input.value) : input.value; } return body; }
   function clearCheck() { checkSequence++; $('#backup-check-result').textContent=''; $('#backup-check-result').className='small'; }
   $('#backup-form').addEventListener('input',clearCheck);
   $('#backup-form').addEventListener('change',clearCheck);
@@ -21,7 +21,8 @@ export function initBackups({api}) {
   function status(config) {
     const date=value=>value ? new Date(value).toLocaleString('ru') : '—';
     $('#backup-status').textContent = `${config.running ? 'Создаём копию…\n' : ''}Последняя успешная копия: ${date(config.lastSuccess)}\nСледующая: ${config.enabled ? date(config.nextRun) : 'по расписанию выключено'}${config.lastLocation ? '\n'+config.lastLocation : ''}`;
-    $('#backup-error').textContent=config.lastError || ''; $('#backup-run').disabled=config.running;
+    $('#backup-cleanup-status').textContent=config.lastCleanup ? `Последняя очистка: ${date(config.lastCleanup)} · удалено копий: ${config.lastRemoved || 0}` : '';
+    $('#backup-error').textContent=[config.lastError,config.lastCleanupError].filter(Boolean).join('\n'); $('#backup-run').disabled=config.running;
   }
   async function refresh(fill=false) {
     const {config}=await api('/backups'); status(config);
