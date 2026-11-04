@@ -35,7 +35,7 @@ const projectUI = initProjects({ api, getData: () => ({ projects, sections, task
 const taskInput = initTaskInput({ getProjects: () => projects, chooseProject: id => projectUI.fillPlacement('add', id, '') });
 const projectViews = initProjectViews({ api, reload:load, redraw:render, today:() => today(), getTimezone:() => settings.timezone, makeTaskRow, addTask:addInView, editTask:openEdit, completeTask, notify });
 initTransfer({ api, reload: load, notify });
-const { openReminders } = initNotifications({ api, reload: load, getSettings: () => settings, notify });
+const { openReminders } = initNotifications({ api, reload: load, getSettings: () => settings, notify, onTaskChange:task=>{if(editTask?.id===task.id){editTask=task;drawEditReminders();}} });
 const globalSearch = initGlobalSearch({api,openTask:id=>{const task=tasks.find(t=>t.id===id);if(task)openEdit(task);else notify('Задача больше не доступна');},openNote:id=>notesUI.open(id),selectView:selectSearchView});
 function selectSearchView(next) { mobileNavigation.close(); $('#search').value=''; view=next; render(); }
 function node(tag, className, text) { const el = document.createElement(tag); if (className) el.className = className; if (text !== undefined) el.textContent = text; return el; }
@@ -237,15 +237,34 @@ function notify(message, undo = null) {
   $('#toast-undo').onclick = async () => { $('#toast-undo').disabled = true; try { await undo(); $('#toast').hidden = true; } catch (e) { $('#toast-text').textContent = e.message; } finally { $('#toast-undo').disabled = false; } };
   toastTimer = setTimeout(() => { $('#toast').hidden = true; }, 9000);
 }
-function openEdit(task) { editTask = task; projectUI.fillPlacement('edit', task.projectId, task.sectionId); $('#edit-title').value = task.title; taskDetails.open(task); $('#edit-schedule').value = ''; $('#edit-clear').checked = false; $('#edit-preview').textContent = `Текущий срок: ${dateLabel(task.due)}${task.recurrence ? ` · ${recurringLabel(task)}` : ''}`; $('#edit-error').textContent = ''; $('#edit-dialog').showModal(); }
-let editTimer, editSequence = 0;
+function openEdit(task) { clearTimeout(editTimer);editSequence++; editTask = task; $('#edit-title-preview').textContent='';drawEditReminders(); projectUI.fillPlacement('edit', task.projectId, task.sectionId); $('#edit-title').value = task.title; taskDetails.open(task); $('#edit-schedule').value = ''; $('#edit-clear').checked = false; $('#edit-preview').textContent = `Текущий срок: ${dateLabel(task.due)}${task.recurrence ? ` · ${recurringLabel(task)}` : ''}`; $('#edit-error').textContent = ''; $('#edit-dialog').showModal(); }
+let editTimer, editSequence = 0, titleTimer, titleSequence=0;
+function drawEditReminders(){
+  const list=$('#edit-reminders-list');list.replaceChildren();
+  for(const reminder of editTask.reminders || [])list.append(node('p','small',`${reminder.kind==='before' ? `За ${reminder.minutes} мин. до задачи` : new Date(reminder.at).toLocaleString('ru')} · ${reminder.channels.join(' · ')}`));
+  if(!editTask.reminders?.length)list.append(node('p','muted small','Напоминаний пока нет.'));
+}
+$('#edit-reminders-open').onclick=()=>openReminders(editTask);
+$('#edit-dialog').addEventListener('close',()=>{clearTimeout(titleTimer);titleSequence++;});
+$('#edit-title').addEventListener('input',()=>{
+  clearTimeout(titleTimer);const sequence=++titleSequence,source=$('#edit-title').value.trim();$('#edit-title-preview').textContent='';
+  if(!source || source===editTask.title)return;
+  titleTimer=setTimeout(async()=>{try{
+    const result=await api('/parse',{method:'POST',body:{source,...settings,timezone:editTask.due?.timezone || settings.timezone}});
+    if(sequence!==titleSequence)return;
+    $('#edit-title-preview').textContent=result.parsed.status==='needs_review' ? 'Срок не распознан: сохраним название целиком и оставим прежний срок.' : result.parsed.due || result.parsed.recurrence || result.parsed.dateAction==='clear' ? `${previewText(result)} · Название: ${result.parsed.title}` : 'Текущий срок сохранится.';
+  }catch(error){if(sequence===titleSequence)$('#edit-title-preview').textContent=error.message;}},250);
+});
+$('#edit-form').addEventListener('keydown',event=>{
+  if(event.key==='Enter' && (event.metaKey || event.ctrlKey) && !event.isComposing && !event.altKey && !event.shiftKey && !$('#edit-save').disabled){event.preventDefault();$('#edit-form').requestSubmit($('#edit-save'));}
+});
 $('#edit-schedule').addEventListener('input', () => {
   clearTimeout(editTimer); const sequence = ++editSequence;
   editTimer = setTimeout(async () => { if (!$('#edit-schedule').value.trim()) { $('#edit-preview').textContent = 'Текущее расписание сохранится.'; return; } try { const result = await api('/parse', { method: 'POST', body: { source: `Task ${$('#edit-schedule').value}`, ...settings, timezone: editTask.due?.timezone || settings.timezone } }); if (sequence === editSequence) $('#edit-preview').textContent = previewText(result); } catch (e) { if (sequence === editSequence) $('#edit-preview').textContent = e.message; } }, 250);
 });
 $('#edit-form').addEventListener('submit', async event => {
   event.preventDefault(); const button = event.submitter; button.disabled = true;
-  const body = { title: $('#edit-title').value.trim(), description: $('#edit-description').value, revision: editTask.revision, clearSchedule: $('#edit-clear').checked, ...projectUI.placement('edit') };
+  const body = { title: $('#edit-title').value.trim(), description: $('#edit-description').value, revision: editTask.revision, parseTitle:$('#edit-title').value.trim()!==editTask.title, timezone:editTask.due?.timezone || settings.timezone, language:settings.language, clearSchedule: $('#edit-clear').checked, ...projectUI.placement('edit') };
   const expression = $('#edit-schedule').value.trim();
   if (expression && !body.clearSchedule) { body.source = `Task ${expression}`; Object.assign(body, settings, { timezone: editTask.due?.timezone || settings.timezone }); }
   try { const result = await api(`/tasks/${editTask.id}`, { method: 'PATCH', body }); editTask = result.task; await taskDetails.saveParent(editTask, editTask.parentId); $('#edit-dialog').close(); await load(); notify('Изменения сохранены'); }

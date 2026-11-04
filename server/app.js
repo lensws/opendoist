@@ -226,9 +226,13 @@ export function createApp({ password, database = './data/opendoist.sqlite', publ
       if (method === 'POST' && action === 'undo') return send(200, { task: store.undo(id, body.revision) });
       if (method === 'DELETE' && !action) { store.mutate(id, body.revision, () => null); return send(200, { ok: true }); }
       if (method === 'PATCH' && !action) {
-        const title = text(body.title);
+        let title = text(body.title);
         let schedule;
         if (body.source !== undefined) schedule = saveable(parse(body).parsed);
+        else if (body.parseTitle === true && body.clearSchedule !== true) {
+          const parsed=parse({...body,source:title}).parsed;
+          if(parsed.status!=='needs_review' && (parsed.due || parsed.recurrence || parsed.deadline || parsed.dateAction==='clear')){schedule=saveable(parsed);title=schedule.title;}
+        }
         const task = store.mutate(id, body.revision, previous => {
           const placement = store.placement(body.projectId === undefined ? previous.projectId ?? null : body.projectId, body.sectionId === undefined ? previous.sectionId ?? null : body.sectionId);
           const next = { ...previous, ...placement, ...(schedule || {}), deadline: schedule?.deadline ?? previous.deadline, description:body.description === undefined ? previous.description || '' : description(body.description), title };

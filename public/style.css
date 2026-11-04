@@ -330,3 +330,13 @@ input[type=checkbox], input[type=radio] { accent-color: var(--accent); }
 .sidebar-bottom{padding:20px 0 0;display:block}
 .sidebar-bottom #settings-open{margin:0}
 .account-signout{margin-top:28px;padding-top:22px;border-top:1px solid var(--line)}
+.edit-reminders{margin-top:18px;padding-top:14px;border-top:1px solid var(--line)}
+.edit-reminders h3{font-size:13px;margin:0 0 8px}
+#edit-title-preview{color:var(--accent-ink)}
+#reminders-dialog{width:min(480px,calc(100vw - 24px));padding:20px}
+#reminders-dialog label:not(.checkbox-label){margin-top:12px;margin-bottom:5px}
+#reminders-dialog input:not([type=checkbox]),#reminders-dialog select{padding:8px 10px}
+#reminders-dialog .notification-channels{margin-top:12px;padding:10px}
+#reminders-dialog .small{margin:4px 0;font-size:11px;line-height:1.4}
+#reminders-dialog .dialog-actions{margin-top:14px}
+#reminders-dialog .reminder-row{padding:7px 0}

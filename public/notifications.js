@@ -1,4 +1,4 @@
-export function initNotifications({ api, reload, getSettings, notify }) {
+export function initNotifications({ api, reload, getSettings, notify, onTaskChange = () => {} }) {
   const $ = selector => document.querySelector(selector);
   let task, config, settingsLoad=0;
   const node = (tag, text, className = '') => { const el = document.createElement(tag); el.textContent = text; el.className = className; return el; };
@@ -14,7 +14,7 @@ export function initNotifications({ api, reload, getSettings, notify }) {
       const remove = node('button', '×', 'icon-button'); remove.type = 'button'; remove.setAttribute('aria-label', `Удалить напоминание: ${reminderLabel(r)}`);
       remove.addEventListener('click', async () => {
         remove.disabled = true;
-        try { task = (await api(`/tasks/${task.id}/reminders/${r.id}`, { method: 'DELETE', body: { revision: task.revision } })).task; drawReminders(); await reload(); }
+        try { task = (await api(`/tasks/${task.id}/reminders/${r.id}`, { method: 'DELETE', body: { revision: task.revision } })).task; drawReminders(); onTaskChange(task); await reload(); }
         catch (e) { $('#reminder-error').textContent = e.message; remove.disabled = false; }
       });
       row.append(label, remove); list.append(row);
@@ -44,7 +44,7 @@ export function initNotifications({ api, reload, getSettings, notify }) {
     event.preventDefault(); const button = event.submitter; button.disabled = true; $('#reminder-error').textContent = '';
     try {
       task = (await api(`/tasks/${task.id}/reminders`, { method: 'POST', body: { revision: task.revision, kind: $('#reminder-kind').value, minutes: Number($('#reminder-amount').value) * Number($('#reminder-unit').value), local: $('#reminder-local').value, timezone: $('#reminder-zone').value.trim(), channels: picked('reminder') } })).task;
-      drawReminders(); await reload(); notify('Напоминание добавлено');
+      drawReminders(); onTaskChange(task); await reload(); notify('Напоминание добавлено');
     } catch (e) { $('#reminder-error').textContent = e.message; } finally { button.disabled = false; }
   });
   function fillConfig(c) {

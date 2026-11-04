@@ -495,3 +495,19 @@ test('password change verifies current credentials, revokes other sessions and s
   assert.equal((await app.request('/api/login',{password})).response.status,401);
   assert.equal((await app.request('/api/login',{password:newPassword})).response.status,200);
 });
+
+test('editor parses changed titles, preserves ordinary names and prioritizes explicit schedule',async t=>{
+ const app=await start();t.after(()=>app.close());await app.login();
+ let task=(await app.request('/api/tasks',{source:'Встреча'})).data.task;
+ task=(await app.request(`/api/tasks/${task.id}`,{revision:task.revision,title:'Встреча завтра в 15:00',parseTitle:true,timezone:'UTC'},'PATCH')).data.task;
+ assert.equal(task.title,'Встреча');assert.equal(task.due.time,'15:00');const due=task.due;
+ task=(await app.request(`/api/tasks/${task.id}`,{revision:task.revision,title:'Обычное новое название',parseTitle:true,timezone:'UTC'},'PATCH')).data.task;
+ assert.deepEqual(task.due,due);assert.equal(task.title,'Обычное новое название');
+ const literal='Подумать о слове `за 10 мин до`';
+ task=(await app.request(`/api/tasks/${task.id}`,{revision:task.revision,title:literal,parseTitle:true,timezone:'UTC'},'PATCH')).data.task;
+ assert.equal(task.title,literal);assert.deepEqual(task.due,due);
+ task=(await app.request(`/api/tasks/${task.id}`,{revision:task.revision,title:'Завтра в 15:00',parseTitle:true,source:'Task послезавтра в 17:00',timezone:'UTC'},'PATCH')).data.task;
+ assert.equal(task.due.time,'17:00');assert.equal(task.title,'Завтра в 15:00');
+ task=(await app.request(`/api/tasks/${task.id}`,{revision:task.revision,title:'Встреча завтра в 15:00',parseTitle:true,clearSchedule:true},'PATCH')).data.task;
+ assert.equal(task.due,null);assert.equal(task.title,'Встреча завтра в 15:00');
+});
