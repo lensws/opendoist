@@ -1,6 +1,6 @@
 export function initNotifications({ api, reload, getSettings, notify }) {
   const $ = selector => document.querySelector(selector);
-  let task, config;
+  let task, config, settingsLoad=0;
   const node = (tag, text, className = '') => { const el = document.createElement(tag); el.textContent = text; el.className = className; return el; };
   const picked = prefix => ['email', 'telegram'].filter(c => $(`#${prefix}-${c}`).checked);
   const localDate = (at, zone) => new Date(at).toLocaleString('ru', { timeZone: zone });
@@ -60,16 +60,18 @@ export function initNotifications({ api, reload, getSettings, notify }) {
     for (const channel of ['email', 'telegram']) $(`#digest-${channel}`).checked = c.digest.channels.includes(channel);
   }
   async function openNotifications() {
+    $('#reminders-dialog').close(); if (!$('#settings-dialog').open) $('#settings-open').click(); $('#settings-dialog').dispatchEvent(new CustomEvent('settings-section',{detail:'notifications'}));
+    const sequence=++settingsLoad;
     try {
-      const result = await api('/notifications'); fillConfig(result.config); $('#telegram-inbox-status').textContent = result.telegram?.error || (result.config.telegram.acceptTasks ? 'Приём задач включён. Команда /help в боте покажет примеры.' : 'Приём задач выключен.');
+      const result = await api('/notifications'); if(sequence!==settingsLoad)return; fillConfig(result.config); $('#telegram-inbox-status').textContent = result.telegram?.error || (result.config.telegram.acceptTasks ? 'Приём задач включён. Команда /help в боте покажет примеры.' : 'Приём задач выключен.');
       $('#email-details').open = config.email.enabled; $('#telegram-details').open = config.telegram.enabled;
       const list = $('#notification-deliveries'); list.replaceChildren();
       const statuses = { pending: 'Ожидает отправки', sent: 'Отправлено', failed: 'Не доставлено', cancelled: 'Отменено' };
       for (const row of result.deliveries) list.append(node('p', `${localDate(row.sent_at || row.scheduled, getSettings().timezone)} · ${row.channel} · ${statuses[row.status]}${row.last_error ? ` · ${row.last_error}` : ''}`));
       if (!result.deliveries.length) list.append(node('p', 'Отправок пока нет.', 'muted'));
       $('#notifications-error').textContent = ''; $('#notifications-status').textContent = '';
-      $('#settings-dialog').close(); $('#reminders-dialog').close(); $('#notifications-dialog').showModal();
-    } catch (e) { notify(e.message); }
+
+    } catch (e) { $('#settings-dialog').dispatchEvent(new CustomEvent('settings-load-error',{detail:'notifications'})); notify(e.message); }
   }
   $('#notifications-open').addEventListener('click', openNotifications);
   $('#reminder-connect').addEventListener('click', openNotifications);
@@ -88,6 +90,6 @@ export function initNotifications({ api, reload, getSettings, notify }) {
     try { await api('/notifications/test', { method: 'POST', body: { channel } }); $('#notifications-status').textContent = 'Тестовое сообщение отправлено.'; }
     catch (e) { $('#notifications-status').textContent = ''; $('#notifications-error').textContent = e.message; } finally { button.disabled = false; }
   });
-  $('#notifications-dialog').addEventListener('close', () => { $('#email-password').value = ''; $('#telegram-token').value = ''; });
+  $('#settings-dialog').addEventListener('close', () => { settingsLoad++; $('#email-password').value = ''; $('#telegram-token').value = ''; });
   return { openReminders };
 }

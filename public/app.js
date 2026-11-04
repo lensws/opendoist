@@ -1,3 +1,4 @@
+import { initSettingsNavigation } from './settings-navigation.js';
 import { initMobileNavigation } from './mobile-navigation.js';
 import { initGlobalSearch } from './global-search.js';
 import { initNotes } from './notes.js';
@@ -250,6 +251,7 @@ $('#edit-form').addEventListener('submit', async event => {
   try { const result = await api(`/tasks/${editTask.id}`, { method: 'PATCH', body }); editTask = result.task; await taskDetails.saveParent(editTask, editTask.parentId); $('#edit-dialog').close(); await load(); notify('Изменения сохранены'); }
   catch (e) { $('#edit-error').textContent = e.message; } finally { button.disabled = false; }
 });
+initSettingsNavigation();
 document.querySelectorAll('[data-close]').forEach(el => el.addEventListener('click', () => document.getElementById(el.dataset.close).close()));
 function appearanceDraft() {
   return { theme: $('#settings-form input[name="theme"]:checked')?.value || 'system', accent: $('#accent-color').value };

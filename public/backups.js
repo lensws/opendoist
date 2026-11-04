@@ -28,8 +28,8 @@ export function initBackups({api}) {
     const {config}=await api('/backups'); status(config);
     if(fill) { for(const field of fields) { const input=$(`#backup-${field}`); if(input.type==='checkbox') input.checked=config[field]; else input.value=config[field]; } $('#backup-accessKeyId').value=''; $('#backup-secretAccessKey').value=''; $('#backup-credentials-note').textContent=config.hasCredentials ? 'Ключи сохранены. Пустые поля оставят их без изменений.' : 'Ключи остаются на сервере.'; visibility(); }
   }
-  $('#backups-open').onclick=async()=>{ clearCheck(); $('#backups-dialog').showModal(); try { await refresh(true); } catch(e) { $('#backup-error').textContent=e.message; } clearInterval(polling); polling=setInterval(()=>refresh().catch(()=>{}),3000); };
-  $('#backups-dialog').addEventListener('close',()=>{ clearInterval(polling); clearCheck(); });
+  $('#backups-open').onclick=async()=>{ clearCheck(); if(!$('#settings-dialog').open) $('#settings-open').click(); $('#settings-dialog').dispatchEvent(new CustomEvent('settings-section',{detail:'backups'})); try { await refresh(true); } catch(e) { $('#settings-dialog').dispatchEvent(new CustomEvent('settings-load-error',{detail:'backups'})); $('#backup-error').textContent=e.message; } clearInterval(polling); if(!$('#settings-dialog').open)return; polling=setInterval(()=>refresh().catch(()=>{}),3000); };
+  $('#settings-dialog').addEventListener('close',()=>{ clearInterval(polling); clearCheck(); });
   $('#backup-target').onchange=visibility;
   $('#backup-form').onsubmit=async e=>{e.preventDefault(); const button=e.submitter; button.disabled=true; const body=draft(); clearCheck(); try { await api('/backups',{method:'PATCH',body}); await refresh(true); } catch(e) { $('#backup-error').textContent=e.message; } finally { button.disabled=false; } };
   $('#backup-run').onclick=async()=>{ $('#backup-run').disabled=true; try { const {config}=await api('/backups/run',{method:'POST',body:{}}); status(config); } catch(e) { $('#backup-error').textContent=e.message; $('#backup-run').disabled=false; } };
