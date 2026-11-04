@@ -273,7 +273,7 @@ $('#edit-form').addEventListener('submit', async event => {
 initSettingsNavigation();
 document.querySelectorAll('[data-close]').forEach(el => el.addEventListener('click', () => document.getElementById(el.dataset.close).close()));
 function appearanceDraft() {
-  return { theme: $('#settings-form input[name="theme"]:checked')?.value || 'system', accent: $('#accent-color').value };
+  return { theme: $('#settings-form input[name="theme"]:checked')?.value || 'system', accent: $('#accent-color').value, darkPalette:$('#dark-palette').value };
 }
 function previewAppearance() {
   const draft = appearanceDraft();
@@ -284,12 +284,13 @@ $('#settings-open').addEventListener('click', () => {
   $('#submit-shortcut').value = settings.submitShortcut || 'enter';
   $('#timezone').value = settings.timezone; $('#language').value = settings.language;
   document.querySelectorAll('input[name="theme"]').forEach(input => { input.checked = input.value === settings.theme; });
-  $('#accent-color').value = settings.accent;
+  $('#accent-color').value = settings.accent; $('#dark-palette').value=settings.darkPalette || 'forest';
   $('#settings-error').textContent = ''; previewAppearance(); $('#settings-dialog').showModal();
 });
 document.querySelectorAll('input[name="theme"]').forEach(input => input.addEventListener('change', previewAppearance));
 document.querySelectorAll('[data-accent]').forEach(button => button.addEventListener('click', () => { $('#accent-color').value = button.dataset.accent; previewAppearance(); }));
 $('#accent-color').addEventListener('input', previewAppearance);
+$('#dark-palette').addEventListener('change', previewAppearance);
 // close covers Cancel, the close button, Escape, and expired-session dismissal.
 $('#settings-dialog').addEventListener('close', () => window.OpenDoistAppearance.apply(settings));
 $('#settings-form').addEventListener('submit', async event => {

@@ -109,9 +109,9 @@ test('settings require authentication, validate atomically and persist for anoth
     await app.login();
     assert.equal((await app.request('/api/settings')).data.settings.theme, 'system');
     assert.equal((await app.request('/api/settings')).data.settings.submitShortcut, 'enter');
-    const saved = { submitShortcut: 'ctrl-enter', theme: 'dark', accent: '#167eaa', timezone: 'Asia/Tokyo', language: 'en' };
+    const saved = { darkPalette:'graphite', submitShortcut: 'ctrl-enter', theme: 'dark', accent: '#167eaa', timezone: 'Asia/Tokyo', language: 'en' };
     assert.deepEqual((await app.request('/api/settings', saved, 'PATCH')).data.settings, saved);
-    for (const patch of [{ theme: 'invalid' }, { accent: 'red' }, { accent: null }, { timezone: 'No/Zone' }, { timezone: null }, { language: 'xx' }, { submitShortcut: 'space' }, { unknown: true }]) {
+    for (const patch of [{ darkPalette:'invalid' }, { theme: 'invalid' }, { accent: 'red' }, { accent: null }, { timezone: 'No/Zone' }, { timezone: null }, { language: 'xx' }, { submitShortcut: 'space' }, { unknown: true }]) {
       assert.equal((await app.request('/api/settings', patch, 'PATCH')).response.status, 400);
       assert.deepEqual((await app.request('/api/settings')).data.settings, saved);
     }

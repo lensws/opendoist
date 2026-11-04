@@ -340,3 +340,14 @@ input[type=checkbox], input[type=radio] { accent-color: var(--accent); }
 #reminders-dialog .small{margin:4px 0;font-size:11px;line-height:1.4}
 #reminders-dialog .dialog-actions{margin-top:14px}
 #reminders-dialog .reminder-row{padding:7px 0}
+
+:root[data-theme="dark"][data-dark-palette="graphite"]{
+ --background:#1e1e1e;--surface:#252525;--surface-soft:#292929;--sidebar:#202020;
+ --text:#eeeeee;--muted:#bdbdbd;--faint:#a5a5a5;--line:#3a3a3a;--border:#606060;
+ --success:#a3d6ac;--danger:#f19b93;--deadline:#e2bf83;--backdrop:#000000a6;
+}
+:root[data-theme="dark"][data-dark-palette="midnight"]{
+ --background:#141923;--surface:#1b2230;--surface-soft:#222b3b;--sidebar:#171d29;
+ --text:#e6edf7;--muted:#b1bfd3;--faint:#9aabc3;--line:#344056;--border:#53657f;
+ --success:#9cd9be;--danger:#f5a4a4;--deadline:#e5c18c;--backdrop:#050912b3;
+}
