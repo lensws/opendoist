@@ -53,6 +53,12 @@ export function createApp({ password, database = './data/opendoist.sqlite', publ
   const backups = new BackupWorker(store, { database, ...(backupTester ? { testDestination:backupTester } : {}), ...(backupUpload ? { upload:backupUpload } : {}) });
   let lastTest = 0;
   const salt = randomBytes(32), expected = scryptSync(password, salt, 32);
+  store.db.exec('CREATE TABLE IF NOT EXISTS account_auth (id INTEGER PRIMARY KEY CHECK(id=1), salt TEXT NOT NULL, hash TEXT NOT NULL)');
+  const verifyPassword = supplied => {
+    if(typeof supplied !== 'string' || supplied.length > 1024)return false;
+    const saved=store.db.prepare('SELECT salt,hash FROM account_auth WHERE id=1').get();
+    return timingSafeEqual(scryptSync(supplied,saved ? Buffer.from(saved.salt,'hex') : salt,32),saved ? Buffer.from(saved.hash,'hex') : expected);
+  };
   const sessionHash = token => createHmac('sha256', password).update(token).digest('hex');
   let attempts = []; // Global limiter: works behind reverse proxies without trusting forwarded IPs.
   const cookie = (token, maxAge) => `opendoist_session=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${maxAge}${secureCookie ? '; Secure' : ''}`;
@@ -80,7 +86,7 @@ export function createApp({ password, database = './data/opendoist.sqlite', publ
         if (attempts.length >= 10) throw new AppError(429, 'Слишком много попыток. Попробуйте через минуту.');
         attempts.push(Date.now());
         const supplied = typeof body.password === 'string' && body.password.length <= 1024 ? body.password : '';
-        if (!timingSafeEqual(scryptSync(supplied, salt, 32), expected)) throw new AppError(401, 'Неверный пароль');
+        if (!verifyPassword(supplied)) throw new AppError(401, 'Неверный пароль');
         const token = randomBytes(32).toString('hex');
         store.db.prepare('DELETE FROM sessions WHERE expires<?').run(Date.now());
         store.db.prepare('INSERT INTO sessions VALUES (?,?)').run(sessionHash(token), Date.now() + SESSION_AGE);
@@ -89,6 +95,24 @@ export function createApp({ password, database = './data/opendoist.sqlite', publ
       const token = /(?:^|;\s*)opendoist_session=([a-f0-9]{64})(?:;|$)/.exec(req.headers.cookie || '')?.[1];
       const session = token && store.db.prepare('SELECT expires FROM sessions WHERE hash=?').get(sessionHash(token));
       if (!session || session.expires < Date.now()) throw new AppError(401, 'Войдите в приложение');
+      if (path === '/api/account/password' && method === 'POST') {
+        const body=await readJSON(req);
+        attempts=attempts.filter(t=>t>Date.now()-60000);
+        if(attempts.length>=10)throw new AppError(429,'Слишком много попыток. Попробуйте через минуту.');
+        attempts.push(Date.now());
+        if(!verifyPassword(body.currentPassword))throw new AppError(403,'Текущий пароль неверен');
+        if(typeof body.newPassword!=='string' || body.newPassword.length<12 || body.newPassword.length>1024 || body.newPassword==='change-this-before-use')throw new AppError(400,'Новый пароль — от 12 до 1024 символов');
+        if(body.newPassword!==body.confirmPassword)throw new AppError(400,'Новые пароли не совпадают');
+        const nextSalt=randomBytes(32),hash=scryptSync(body.newPassword,nextSalt,32),nextToken=randomBytes(32).toString('hex');
+        store.db.exec('BEGIN IMMEDIATE');
+        try {
+          store.db.prepare('INSERT INTO account_auth VALUES (1,?,?) ON CONFLICT(id) DO UPDATE SET salt=excluded.salt,hash=excluded.hash').run(nextSalt.toString('hex'),hash.toString('hex'));
+          store.db.prepare('DELETE FROM sessions').run();
+          store.db.prepare('INSERT INTO sessions VALUES (?,?)').run(sessionHash(nextToken),Date.now()+SESSION_AGE);
+          store.db.exec('COMMIT');
+        }catch(error){store.db.exec('ROLLBACK');throw error;}
+        return send(200,{ok:true},{'Set-Cookie':cookie(nextToken,SESSION_AGE/1000)});
+      }
       if (path === '/api/session' && method === 'GET') return send(200, { ok: true });
       if (path === '/api/logout' && method === 'POST') {
         store.db.prepare('DELETE FROM sessions WHERE hash=?').run(sessionHash(token));

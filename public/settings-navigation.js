@@ -5,7 +5,7 @@ export function initSettingsNavigation() {
   const nav=document.createElement('nav');nav.className='settings-nav';nav.setAttribute('aria-label','Разделы настроек');
   const content=document.createElement('div');content.className='settings-content';
   layout.append(nav,content);dialog.append(layout);content.append(form);
-  const groups=[['general','Основное','⚙'],['appearance','Оформление','◐'],['notifications','Уведомления','♧'],['data','Данные','⇄'],['backups','Резервные копии','↥']];
+  const groups=[['account','Учётная запись','○'],['general','Основное','⚙'],['appearance','Оформление','◐'],['notifications','Уведомления','♧'],['data','Данные','⇄'],['backups','Резервные копии','↥']];
   const panels=new Map(),buttons=new Map();let loaded=new Set();
   for(const [id,title,icon] of groups){
     const panel=document.createElement('section');panel.id=`settings-${id}`;panel.hidden=true;panel.className='settings-panel';
@@ -15,6 +15,7 @@ export function initSettingsNavigation() {
     const symbol=document.createElement('span');symbol.textContent=icon;symbol.setAttribute('aria-hidden','true');if(id==='notifications')symbol.innerHTML='<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg>';button.append(symbol,document.createTextNode(title));nav.append(button);buttons.set(id,button);
     button.onclick=()=>select(id,true);
   }
+  panels.get('account').append($('#account-template').content.cloneNode(true));
   const fields=[...form.querySelectorAll(':scope > fieldset')];
   panels.get('general').append(fields[0]);panels.get('data').append(fields[1]);panels.get('appearance').append(...fields.slice(2));
   panels.get('data').append(form.querySelector('.task-transfer'));form.querySelector('.task-transfer').open=true;

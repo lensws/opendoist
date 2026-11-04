@@ -185,3 +185,17 @@ test('rescheduling a failed digest sends at the new time without resending a suc
     now += 5 * 60000; await worker.tick(); assert.equal(calls, 2);
   } finally { store.close(); }
 });
+
+test('both digests send today in the morning and tomorrow in the evening without duplicates',async()=>{
+ const store=new Store(':memory:');let now=Date.parse('2030-05-10T08:00:00Z');const messages=[];
+ const c=validateConfig({digest:{enabled:true,mode:'both',time:'08:00',eveningTime:'20:00',timezone:'UTC',channels:['telegram']}},config(),now-86400000);
+ store.saveNotificationConfig(c);
+ const worker=new NotificationWorker(store,{now:()=>now,send:async(channel,message)=>messages.push(message)});
+ try{
+  await worker.tick();await worker.tick();assert.equal(messages.length,1);
+  now=Date.parse('2030-05-10T20:00:00Z');await worker.tick();await worker.tick();assert.equal(messages.length,2);
+  const events=store.db.prepare('SELECT event FROM notification_outbox ORDER BY scheduled').all().map(r=>JSON.parse(r.event));
+  assert.deepEqual(events.map(e=>[e.mode,e.date]),[['morning','2030-05-10'],['evening','2030-05-11']]);
+  assert.throws(()=>validateConfig({digest:{eveningTime:'25:00'}},c));
+ }finally{await worker.stop();store.close();}
+});

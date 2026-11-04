@@ -7,7 +7,7 @@ import { occurrences } from '../src/index.js';
 export const notificationDefaults = () => ({
   email: { enabled: false, host: '', port: 587, secure: false, user: '', password: '', from: '', to: '' },
   telegram: { enabled: false, token: '', chatId: '', acceptTasks: false, receiveSince: 0 },
-  digest: { enabled: false, mode: 'morning', time: '08:00', timezone: 'Europe/Moscow', channels: ['email'], updatedAt: 0 },
+  digest: { enabled: false, mode: 'morning', time: '08:00', eveningTime:'20:00', timezone: 'Europe/Moscow', channels: ['email'], updatedAt: 0 },
 });
 const bad = message => { throw new AppError(400, message); };
 const object = value => value && typeof value === 'object' && !Array.isArray(value);
@@ -21,7 +21,7 @@ export function publicConfig(config) {
 }
 export function validateConfig(patch, previous, now = Date.now()) {
   if (!object(patch) || Object.keys(patch).some(k => !['email', 'telegram', 'digest'].includes(k))) bad('Некорректные настройки уведомлений');
-  previous = { ...previous, telegram: { ...notificationDefaults().telegram, ...previous.telegram } };
+  previous = { ...previous, digest:{...notificationDefaults().digest,...previous.digest}, telegram: { ...notificationDefaults().telegram, ...previous.telegram } };
   const next = structuredClone(previous);
   for (const section of Object.keys(patch)) {
     if (!object(patch[section])) bad('Некорректные настройки уведомлений');
@@ -40,7 +40,8 @@ export function validateConfig(patch, previous, now = Date.now()) {
   if (e.enabled && (!/^[a-z0-9.-]+$/i.test(e.host) || !email(e.from) || !email(e.to))) bad('Для email укажите SMTP-сервер, адрес отправителя и получателя');
   if (e.enabled && e.user && !e.password) bad('Укажите пароль SMTP');
   if (t.enabled && (!/^\d+:[\w-]{20,}$/.test(t.token) || !/^(?:-?\d+|@[a-z0-9_]{5,})$/i.test(t.chatId))) bad('Для Telegram укажите токен бота и Chat ID');
-  if (!['morning', 'evening'].includes(d.mode) || typeof d.time !== 'string' || !/^([01]\d|2[0-3]):[0-5]\d$/.test(d.time) || !zoneValid(d.timezone) || !channelsValid(d.channels)) bad('Проверьте время, часовой пояс и каналы сводки');
+  if (!['morning', 'evening', 'both'].includes(d.mode) || typeof d.time !== 'string' || !/^([01]\d|2[0-3]):[0-5]\d$/.test(d.time) || !zoneValid(d.timezone) || !channelsValid(d.channels)) bad('Проверьте время, часовой пояс и каналы сводки');
+  if (typeof d.eveningTime !== 'string' || !/^([01]\d|2[0-3]):[0-5]\d$/.test(d.eveningTime)) bad('Проверьте время вечерней сводки');
   if (d.enabled && d.channels.some(c => !next[c].enabled)) bad('Сначала включите выбранные каналы сводки');
   if (!t.enabled) t.acceptTasks = false;
   if (typeof t.acceptTasks !== 'boolean' || (t.acceptTasks && (!t.enabled || !/^[1-9]\d*$/.test(t.chatId)))) bad('Создание задач доступно только в подключённом личном чате: укажите положительный числовой Chat ID');
@@ -118,7 +119,7 @@ export class NotificationWorker {
   constructor(store, { send = sendNotification, now = Date.now, publicUrl = '' } = {}) {
     this.store = store; this.send = send; this.now = now; this.publicUrl = publicUrl; this.running = null;
   }
-  config() { const saved = this.store.notificationConfig() || notificationDefaults(); return { ...saved, telegram: { ...notificationDefaults().telegram, ...saved.telegram } }; }
+  config() { const saved = this.store.notificationConfig() || notificationDefaults(); return { ...saved, digest:{...notificationDefaults().digest,...saved.digest}, telegram: { ...notificationDefaults().telegram, ...saved.telegram } }; }
   start() { this.timer = setInterval(() => this.tick().catch(() => console.error('Notification scheduler failed')), 15000); this.timer.unref(); this.tick().catch(() => console.error('Notification scheduler failed')); }
   async stop() { clearInterval(this.timer); await this.running; }
   tick() {
@@ -140,13 +141,14 @@ export class NotificationWorker {
       for (const channel of reminder.channels.filter(c => config[c].enabled)) this.enqueue(`reminder:${reminder.id}:${at}:${channel}`, channel, task.id, { type: 'reminder', reminderId: reminder.id, at }, at, at + day);
     }
     const d = config.digest;
-    if (d.enabled) {
+    if (d.enabled) for(const mode of d.mode==='both' ? ['morning','evening'] : [d.mode]) {
+      const time=d.mode==='both' && mode==='evening' ? d.eveningTime : d.time;
       const local = DateTime.fromMillis(now, { zone: d.timezone });
-      const sendAt = DateTime.fromISO(`${local.toISODate()}T${d.time}`, { zone: d.timezone }).toMillis();
+      const sendAt = DateTime.fromISO(`${local.toISODate()}T${time}`, { zone: d.timezone }).toMillis();
       // Up to three hours of catch-up, but never backfill a newly enabled digest.
       if (now >= sendAt && now - sendAt < 3 * 3600000 && sendAt >= d.updatedAt) {
-        const date = (d.mode === 'evening' ? local.plus({ days: 1 }) : local).toISODate();
-        for (const channel of d.channels.filter(c => config[c].enabled)) this.enqueue(`digest:${date}:${d.mode}:${channel}`, channel, null, { type: 'digest', date, mode: d.mode, timezone: d.timezone, updatedAt: d.updatedAt }, sendAt, sendAt + 3 * 3600000);
+        const date = (mode === 'evening' ? local.plus({ days: 1 }) : local).toISODate();
+        for (const channel of d.channels.filter(c => config[c].enabled)) this.enqueue(`digest:${date}:${mode}:${channel}`, channel, null, { type: 'digest', date, mode, timezone: d.timezone, updatedAt: d.updatedAt }, sendAt, sendAt + 3 * 3600000);
       }
     }
     const rows = db.prepare("SELECT * FROM notification_outbox WHERE status='pending' AND next_attempt<=? AND lease_until<=? ORDER BY scheduled LIMIT 25").all(now, now);

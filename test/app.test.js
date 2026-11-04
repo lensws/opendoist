@@ -473,3 +473,25 @@ test('explicit unscheduled creation preserves the full source and bypasses only 
   assert.equal((await app.request('/api/tasks',{source:'x'.repeat(501),withoutSchedule:true})).response.status,400);
   assert.equal((await app.request('/api/tasks',{source,withoutSchedule:'yes'})).response.status,400);
 });
+
+test('password change verifies current credentials, revokes other sessions and survives restart',async t=>{
+  const dir=mkdtempSync(join(tmpdir(),'opendoist-account-')),db=join(dir,'data.sqlite');
+  let app=await start(db);t.after(async()=>{await app.close();rmSync(dir,{recursive:true,force:true});});
+  const newPassword='new-test-password-456';
+  assert.equal((await app.request('/api/account/password',{currentPassword:password,newPassword,confirmPassword:newPassword})).response.status,401);
+  await app.login();
+  const another=await app.request('/api/login',{password});const otherCookie=another.response.headers.get('set-cookie').split(';')[0];
+  assert.equal((await app.request('/api/account/password',{currentPassword:'wrong',newPassword,confirmPassword:newPassword})).response.status,403);
+  assert.equal((await app.request('/api/account/password',{currentPassword:password,newPassword:'short',confirmPassword:'short'})).response.status,400);
+  assert.equal((await app.request('/api/account/password',{currentPassword:password,newPassword,confirmPassword:'different'})).response.status,400);
+  assert.equal((await app.request('/api/account/password',{currentPassword:password,newPassword,confirmPassword:newPassword},'POST',{Origin:'https://evil.example'})).response.status,403);
+  const result=await app.request('/api/account/password',{currentPassword:password,newPassword,confirmPassword:newPassword});assert.equal(result.response.status,200);
+  const freshCookie=result.response.headers.get('set-cookie').split(';')[0];
+  assert.equal((await app.request('/api/session',undefined,'GET',{Cookie:otherCookie})).response.status,401);
+  assert.equal((await app.request('/api/session',undefined,'GET',{Cookie:freshCookie})).response.status,200);
+  assert.equal((await app.request('/api/login',{password})).response.status,401);
+  assert.doesNotMatch(JSON.stringify(app.store.db.prepare('SELECT * FROM account_auth').get()),new RegExp(newPassword));
+  await app.close();app=await start(db); // original environment password still passed by start()
+  assert.equal((await app.request('/api/login',{password})).response.status,401);
+  assert.equal((await app.request('/api/login',{password:newPassword})).response.status,200);
+});

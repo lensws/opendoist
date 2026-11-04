@@ -56,7 +56,7 @@ export function initNotifications({ api, reload, getSettings, notify }) {
     $('#telegram-secret-note').textContent = c.telegram.tokenSet ? 'Токен сохранён. Оставьте поле пустым, чтобы сохранить его.' : 'Токен выдаёт @BotFather.';
     $('#telegram-accept-tasks').checked = !!c.telegram.acceptTasks; $('#telegram-enabled').checked = c.telegram.enabled; $('#telegram-chat').value = c.telegram.chatId;
     $('#email-state').textContent = c.email.enabled ? 'Включён' : 'Не подключён'; $('#telegram-state').textContent = c.telegram.enabled ? 'Включён' : 'Не подключён';
-    $('#digest-enabled').checked = c.digest.enabled; $('#digest-mode').value = c.digest.mode; $('#digest-time').value = c.digest.time; $('#digest-zone').value = c.digest.timezone;
+    $('#digest-enabled').checked = c.digest.enabled; $('#digest-mode').value = c.digest.mode; $('#digest-time').value = c.digest.time; $('#digest-evening-time').value=c.digest.eveningTime || '20:00'; digestVisibility(); $('#digest-zone').value = c.digest.timezone;
     for (const channel of ['email', 'telegram']) $(`#digest-${channel}`).checked = c.digest.channels.includes(channel);
   }
   async function openNotifications() {
@@ -75,10 +75,11 @@ export function initNotifications({ api, reload, getSettings, notify }) {
   }
   $('#notifications-open').addEventListener('click', openNotifications);
   $('#reminder-connect').addEventListener('click', openNotifications);
-  $('#digest-mode').addEventListener('change', () => { $('#digest-time').value = $('#digest-mode').value === 'morning' ? '08:00' : '20:00'; });
+  function digestVisibility(){const both=$('#digest-mode').value==='both'; $('#digest-evening-fields').hidden=!both; $('#digest-evening-time').required=both; $('#digest-time-label').textContent=both?'Утром — дела на сегодня':'Время сводки';}
+  $('#digest-mode').addEventListener('change', () => { $('#digest-time').value = $('#digest-mode').value === 'evening' ? '20:00' : '08:00'; digestVisibility(); });
   $('#notifications-form').addEventListener('submit', async event => {
     event.preventDefault(); const button = event.submitter; button.disabled = true; $('#notifications-error').textContent = ''; $('#notifications-status').textContent = '';
-    const body = { email: { enabled: $('#email-enabled').checked, secure: $('#email-secure').checked, port: Number($('#email-port').value), password: $('#email-password').value }, telegram: { enabled: $('#telegram-enabled').checked, acceptTasks: $('#telegram-accept-tasks').checked, token: $('#telegram-token').value.trim(), chatId: $('#telegram-chat').value.trim() }, digest: { enabled: $('#digest-enabled').checked, mode: $('#digest-mode').value, time: $('#digest-time').value, timezone: $('#digest-zone').value.trim(), channels: picked('digest') } };
+    const body = { email: { enabled: $('#email-enabled').checked, secure: $('#email-secure').checked, port: Number($('#email-port').value), password: $('#email-password').value }, telegram: { enabled: $('#telegram-enabled').checked, acceptTasks: $('#telegram-accept-tasks').checked, token: $('#telegram-token').value.trim(), chatId: $('#telegram-chat').value.trim() }, digest: { enabled: $('#digest-enabled').checked, mode: $('#digest-mode').value, time: $('#digest-time').value, eveningTime:$('#digest-evening-time').value, timezone: $('#digest-zone').value.trim(), channels: picked('digest') } };
     // A disabled digest may keep its default channel until the user selects one.
     if (!body.digest.enabled && !body.digest.channels.length) body.digest.channels = ['email'];
     for (const key of ['host', 'user', 'from', 'to']) body.email[key] = $(`#email-${key}`).value.trim();

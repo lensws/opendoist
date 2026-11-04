@@ -17,7 +17,7 @@
       <button data-view="notes" class="nav-item"><span class="nav-icon">▤</span>Заметки</button>
     </nav>
     <div class="projects-heading"><span>ПРОЕКТЫ</span><button id="project-add" class="icon-button" aria-label="Добавить проект">＋</button></div><div id="project-list"></div>
-    <div class="sidebar-bottom"><div class="local-note"><span class="online-dot"></span>Ваш сервер · ваши данные</div><button id="settings-open" class="subtle">⚙ Настройки</button><button id="logout" class="subtle">Выйти</button></div>
+    <div class="sidebar-bottom"><button id="settings-open" class="nav-item"><span class="nav-icon" aria-hidden="true">⚙</span>Настройки</button></div>
   </aside>
   <main>
     <header class="mobile-toolbar"><button id="menu-open" class="mobile-menu-button" aria-label="Открыть меню" aria-controls="sidebar" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></svg></button><span id="mobile-view-title">Входящие</span></header>
@@ -45,6 +45,7 @@
 <p id="emoji-status" class="muted small" role="status"></p><div id="emoji-grid" class="emoji-grid" role="group" aria-label="Набор эмодзи"></div><button id="emoji-more" type="button" class="secondary" hidden>Показать ещё</button><button id="emoji-retry" type="button" class="secondary" hidden>Повторить загрузку</button>
 <div class="emoji-selection"><span id="emoji-selected" aria-hidden="true">📁</span><label for="entity-emoji">Выбранный эмодзи — можно вставить свой<input id="entity-emoji" maxlength="32" placeholder="Например, 🏠" autocomplete="off"></label></div>
 </div><p id="entity-error" class="error" role="alert"></p><div class="dialog-actions"><button id="entity-delete" type="button" class="secondary" hidden>Удалить</button><button type="submit" class="primary">Сохранить</button></div></form></dialog>
+<template id="account-template"><form id="account-form"><p class="muted">Смените пароль для входа в этот экземпляр OpenDoist.</p><label for="account-current">Текущий пароль</label><input id="account-current" type="password" autocomplete="current-password" required maxlength="1024"><label for="account-new">Новый пароль</label><input id="account-new" type="password" autocomplete="new-password" required minlength="12" maxlength="1024"><label for="account-confirm">Повторите новый пароль</label><input id="account-confirm" type="password" autocomplete="new-password" required minlength="12" maxlength="1024"><p class="muted small">Минимум 12 символов. После смены пароля остальные устройства выйдут из аккаунта.</p><p id="account-error" class="error" role="alert"></p><p id="account-status" class="small" role="status"></p><div class="dialog-actions"><button class="primary" type="submit">Сменить пароль</button></div></form><div class="account-signout"><button type="button" id="logout" class="secondary">Выйти из аккаунта</button></div></template>
 <dialog id="settings-dialog" aria-labelledby="settings-title">
   <form id="settings-form">
     <div class="dialog-heading"><h2 id="settings-title">Настройки</h2><button type="button" data-close="settings-dialog" class="icon-button" aria-label="Закрыть">×</button></div>
@@ -122,9 +123,9 @@
       <button type="button" id="test-telegram" class="secondary">Отправить тестовое сообщение</button>
     </details>
     <section class="channel-section"><h3>Сводка дел на день</h3><label class="checkbox-label"><input id="digest-enabled" type="checkbox"> Присылать ежедневную сводку</label>
-      <label for="digest-mode">Когда присылать</label><select id="digest-mode"><option value="morning">Утром — дела на сегодня</option><option value="evening">Вечером — дела на завтра</option></select>
-      <div class="form-grid digest-grid"><div><label for="digest-time">Время сводки</label><input id="digest-time" type="time" value="08:00" required></div><div><label for="digest-zone">Часовой пояс сводки</label><input id="digest-zone" list="timezones" required></div></div>
-      <fieldset class="notification-channels"><legend>Каналы сводки</legend><label class="checkbox-label"><input id="digest-email" type="checkbox"> Email</label><label class="checkbox-label"><input id="digest-telegram" type="checkbox"> Telegram</label></fieldset>
+      <label for="digest-mode">Когда присылать</label><select id="digest-mode"><option value="morning">Утром — дела на сегодня</option><option value="evening">Вечером — дела на завтра</option><option value="both">Утром и вечером</option></select>
+      <div class="form-grid digest-grid"><div><label id="digest-time-label" for="digest-time">Время сводки</label><input id="digest-time" type="time" value="08:00" required></div><div><label for="digest-zone">Часовой пояс сводки</label><input id="digest-zone" list="timezones" required></div></div>
+      <div id="digest-evening-fields" hidden><label for="digest-evening-time">Вечером — дела на завтра</label><input id="digest-evening-time" type="time" value="20:00" required></div><fieldset class="notification-channels"><legend>Каналы сводки</legend><label class="checkbox-label"><input id="digest-email" type="checkbox"> Email</label><label class="checkbox-label"><input id="digest-telegram" type="checkbox"> Telegram</label></fieldset>
       <p class="muted small">Включает дела на выбранный день и просроченные задачи. Задачи без срока в сводку не входят.</p>
     </section>
     <details class="channel-section"><summary>Последние доставки</summary><div id="notification-deliveries" class="small"></div></details>

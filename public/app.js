@@ -294,6 +294,12 @@ $('#login-form').addEventListener('submit', async event => {
   try { await api('/login', { method: 'POST', body: { password: $('#password').value } }); $('#password').value = ''; $('#login-screen').hidden = true; $('#workspace').hidden = false; await load(); }
   catch (e) { $('#login-error').textContent = e.message; } finally { event.submitter.disabled = false; }
 });
+$('#account-form').addEventListener('submit',async event=>{
+  event.preventDefault();const button=event.submitter;button.disabled=true;$('#account-error').textContent='';$('#account-status').textContent='';
+  try { await api('/account/password',{method:'POST',body:{currentPassword:$('#account-current').value,newPassword:$('#account-new').value,confirmPassword:$('#account-confirm').value}});$('#account-form').reset();$('#account-status').textContent='Пароль изменён. На остальных устройствах потребуется войти заново.'; }
+  catch(error){$('#account-error').textContent=error.message;}finally{button.disabled=false;}
+});
+$('#settings-dialog').addEventListener('close',()=>{$('#account-form').reset();$('#account-error').textContent='';$('#account-status').textContent='';});
 $('#logout').addEventListener('click', async () => { try { await api('/logout', { method: 'POST', body: {} }); showLogin(); } catch (e) { $('#page-error').textContent = e.message; } });
 try { await api('/session'); $('#workspace').hidden = false; await load(); } catch (e) { showLogin(); if (e.status !== 401) $('#login-error').textContent = 'Сервер недоступен. Обновите страницу.'; }
 
