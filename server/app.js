@@ -131,9 +131,9 @@ export function createApp({ password, database = './data/opendoist.sqlite', publ
           let name; try { name = decodeURIComponent(req.headers['x-file-name'] || ''); } catch { throw new AppError(400, 'Некорректное имя файла'); }
           return send(201, { file:store.addAttachment(taskId, name, await readFileBody(req)) });
         }
-        const file = fileId && store.db.prepare('SELECT * FROM attachments WHERE id=? AND task_id=?').get(fileId, taskId);
+        const file = fileId && store.db.prepare('SELECT id,name,length(data) AS size FROM attachments WHERE id=? AND task_id=?').get(fileId, taskId);
         if (!file) throw new AppError(404, 'Файл не найден');
-        if (method === 'GET' || method === 'HEAD') return serveAttachment(req, res, file, headers);
+        if (method === 'GET' || method === 'HEAD') return serveAttachment(req, res, file, headers, () => store.db.prepare('SELECT data FROM attachments WHERE id=? AND task_id=?').get(fileId, taskId).data);
         if (method === 'DELETE') { store.db.prepare('DELETE FROM attachments WHERE id=?').run(fileId); return send(200, { ok:true }); }
         throw new AppError(405, 'Метод не поддерживается');
       }

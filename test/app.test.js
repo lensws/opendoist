@@ -547,3 +547,30 @@ test('media attachments support authenticated previews, byte ranges, HEAD and sa
     assert.equal(head.status,200); assert.equal(head.headers.get('content-length'),'10'); assert.equal(await head.text(),'');
   }
 });
+
+
+test('attachment cache revalidates without a body and cannot bypass login or deletion', async t => {
+  const app=await start();t.after(()=>app.close());
+  const login=await app.login(), cookie=login.response.headers.get('set-cookie').split(';')[0];
+  const task=(await app.request('/api/tasks',{source:'Cached picture'})).data.task;
+  const base=`/api/tasks/${task.id}/attachments`;
+  const uploaded=await fetch(app.base+base,{method:'POST',headers:{Cookie:cookie,'Content-Type':'application/octet-stream','X-File-Name':'photo.png'},body:'picture'});
+  const {file}=await uploaded.json();
+  for(const suffix of ['', '?preview=1']) {
+    const url=`${app.base}${base}/${file.id}${suffix}`;
+    const first=await fetch(url,{headers:{Cookie:cookie}}), etag=first.headers.get('etag');
+    assert.ok(etag);assert.equal(first.headers.get('cache-control'),'private, no-cache');assert.equal(first.headers.get('vary'),'Cookie');
+    assert.equal(await first.text(),'picture');
+    const cached=await fetch(url,{headers:{Cookie:cookie,'If-None-Match':etag}});
+    assert.equal(cached.status,304);assert.equal(await cached.text(),'');
+    const unauthorized=await fetch(url,{headers:{'If-None-Match':etag}});
+    assert.equal(unauthorized.status,401);await unauthorized.text();
+    const mismatch=await fetch(url,{headers:{Cookie:cookie,'If-None-Match':'"other"'}});
+    assert.equal(mismatch.status,200);assert.equal(await mismatch.text(),'picture');
+  }
+  const url=`${app.base}${base}/${file.id}?preview=1`;
+  const first=await fetch(url,{headers:{Cookie:cookie}}),etag=first.headers.get('etag');await first.text();
+  await app.request(`${base}/${file.id}`,{},'DELETE');
+  const deleted=await fetch(url,{headers:{Cookie:cookie,'If-None-Match':etag}});
+  assert.equal(deleted.status,404);await deleted.text();
+});

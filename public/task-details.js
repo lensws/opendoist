@@ -101,7 +101,7 @@ export function initTaskDetails({ api, getTasks, reload, notify }) {
         const kind=file.mediaType.split('/')[0];
         const media=document.createElement(kind==='image' ? 'img' : kind);
         media.className='attachment-media';
-        if(kind==='image') { media.alt=file.name; media.loading='lazy'; }
+        if(kind==='image') { media.alt=file.name; media.loading='eager'; media.decoding='async'; }
         else { media.controls=true; media.preload='none'; media.setAttribute('aria-label',file.name); if(kind==='video') media.playsInline=true; }
         const error=document.createElement('p'); error.className='small muted'; error.hidden=true;
         error.textContent='Не удалось открыть файл в браузере. Его можно скачать по ссылке выше.';
