@@ -1,3 +1,4 @@
+import { initMobileNavigation } from './mobile-navigation.js';
 import { initGlobalSearch } from './global-search.js';
 import { initNotes } from './notes.js';
 import { fetchWorkspace } from './workspace-data.js';
@@ -25,6 +26,7 @@ async function api(path, { method = 'GET', body } = {}) {
   if (!response.ok) { if (response.status === 401 && path !== '/login') showLogin(); const error = new Error(data.error || 'Не удалось выполнить запрос'); error.status = response.status; throw error; }
   return data;
 }
+const mobileNavigation = initMobileNavigation();
 const notesUI = initNotes({api,notify,onChange:()=>{if ($('#search').value.trim()) render();}});
 initBackups({api});
 const taskDetails = initTaskDetails({api, getTasks:() => tasks, reload:load, notify});
@@ -34,7 +36,7 @@ const projectViews = initProjectViews({ api, reload:load, redraw:render, today:(
 initTransfer({ api, reload: load, notify });
 const { openReminders } = initNotifications({ api, reload: load, getSettings: () => settings, notify });
 const globalSearch = initGlobalSearch({api,openTask:id=>{const task=tasks.find(t=>t.id===id);if(task)openEdit(task);else notify('Задача больше не доступна');},openNote:id=>notesUI.open(id),selectView:selectSearchView});
-function selectSearchView(next) { $('#search').value=''; view=next; render(); }
+function selectSearchView(next) { mobileNavigation.close(); $('#search').value=''; view=next; render(); }
 function node(tag, className, text) { const el = document.createElement(tag); if (className) el.className = className; if (text !== undefined) el.textContent = text; return el; }
 const todayCache = new Map();
 function today(zone = settings.timezone) {
@@ -58,7 +60,7 @@ function recurringLabel(task) {
   const spans = task.spans?.filter(s => s.kind === 'recurrence' || s.kind === 'mode');
   return spans?.length ? spans.map(s => s.text).join(' ') : 'Повторяется';
 }
-function showLogin() { globalSearch.hide(); notesUI.reset(); loadSequence++; $('#workspace').hidden = true; $('#login-screen').hidden = false; tasks = []; history = []; $('#task-list').replaceChildren(); for (const dialog of document.querySelectorAll('dialog[open]')) dialog.close(); }
+function showLogin() { mobileNavigation.close(false); globalSearch.hide(); notesUI.reset(); loadSequence++; $('#workspace').hidden = true; $('#login-screen').hidden = false; tasks = []; history = []; $('#task-list').replaceChildren(); for (const dialog of document.querySelectorAll('dialog[open]')) dialog.close(); }
 let loadSequence = 0;
 async function load() {
   const sequence = ++loadSequence;
@@ -89,6 +91,7 @@ function render() {
   const entity = view.startsWith('project:') ? projects.find(p => p.id === view.slice(8)) : view.startsWith('section:') ? sections.find(s => s.id === view.slice(8)) : null;
   if (!titles[view] && !entity) view = 'inbox';
   $('#view-title').textContent = entity?.name || titles[view];
+  $('#mobile-view-title').textContent = $('#search').value.trim() ? 'Поиск везде' : $('#view-title').textContent;
   projectUI.draw(view);
   if ($('#search').value.trim()) {
     projectViews.configure(null,'search'); notesUI.hide();
@@ -205,7 +208,7 @@ $('#search').addEventListener('keydown',event=>{if(event.key==='Escape'){event.p
 document.addEventListener('keydown',event=>{
   if(event.isComposing || event.altKey || event.shiftKey || $('#workspace').hidden || document.querySelector('dialog[open]'))return;
   if((event.ctrlKey || event.metaKey) && event.code==='KeyK'){
-    event.preventDefault();$('#search').focus();$('#search').select();
+    event.preventDefault();mobileNavigation.open();$('#search').focus();$('#search').select();
   }
 });
 function syncComposer() {

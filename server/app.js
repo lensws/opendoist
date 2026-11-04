@@ -10,7 +10,7 @@ import { Store, AppError } from './store.js';
 import { TelegramInbox } from './telegram.js';
 import { NotificationWorker, publicConfig, validateConfig, makeReminder } from './notifications.js';
 
-const assets = new Map(['manifest.webmanifest', 'apple-touch-icon.png', 'icon-192.png', 'icon-512.png', 'global-search.js', 'notes.js', 'workspace-data.js', 'task-tree.js', 'task-details.js', 'markdown.js', 'backups.js', 'index.html', 'app.js', 'style.css', 'icon.svg', 'appearance.js', 'notifications.js', 'transfer.js', 'projects.js', 'project-views.js', 'calendar-model.js', 'submit-shortcut.js', 'task-input.js', 'emoji-picker.js', 'emoji-search.js', 'emojis.json', 'emojis-LICENSE.txt'].map(name => [name, readFileSync(new URL(`../public/${name}`, import.meta.url))]));
+const assets = new Map(['mobile-navigation.js', 'manifest.webmanifest', 'apple-touch-icon.png', 'icon-192.png', 'icon-512.png', 'global-search.js', 'notes.js', 'workspace-data.js', 'task-tree.js', 'task-details.js', 'markdown.js', 'backups.js', 'index.html', 'app.js', 'style.css', 'icon.svg', 'appearance.js', 'notifications.js', 'transfer.js', 'projects.js', 'project-views.js', 'calendar-model.js', 'submit-shortcut.js', 'task-input.js', 'emoji-picker.js', 'emoji-search.js', 'emojis.json', 'emojis-LICENSE.txt'].map(name => [name, readFileSync(new URL(`../public/${name}`, import.meta.url))]));
 const mime = { png:'image/png', webmanifest:'application/manifest+json; charset=utf-8', json: 'application/json; charset=utf-8', txt: 'text/plain; charset=utf-8', html: 'text/html; charset=utf-8', js: 'text/javascript; charset=utf-8', css: 'text/css; charset=utf-8', svg: 'image/svg+xml' };
 const SESSION_AGE = 7 * 86400 * 1000;
 async function readJSON(req, limit = 16384) {
