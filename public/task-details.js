@@ -84,17 +84,35 @@ export function initTaskDetails({ api, getTasks, reload, notify }) {
   function renderPreview() { $('#description-preview').innerHTML = markdown($('#edit-description').value, true); $('#title-preview').innerHTML = markdown($('#edit-title').value); }
   $('#description-toggle').addEventListener('click', () => { preview=!preview; $('#description-preview').hidden=!preview; $('#title-preview').hidden=!preview; $('#description-toggle').textContent=preview ? 'Скрыть предпросмотр' : 'Предпросмотр Markdown'; renderPreview(); });
   $('#edit-description').addEventListener('input',renderPreview); $('#edit-title').addEventListener('input',renderPreview);
+  function clearFiles() {
+    $('#attachment-list').querySelectorAll('audio,video').forEach(media => { media.pause(); media.removeAttribute('src'); media.load(); });
+    $('#attachment-list').replaceChildren();
+  }
   async function files(task, seq) {
     const result=await api(`/tasks/${task.id}/attachments`); if (seq !== sequence) return;
-    $('#attachment-list').replaceChildren();
+    clearFiles();
     for (const file of result.files) {
       const row=document.createElement('div'); row.className='attachment-row';
       const link=document.createElement('a'); link.href=`/api/tasks/${task.id}/attachments/${file.id}`; link.textContent=`${file.name} · ${(file.size/1024).toFixed(1)} КБ`; link.download=file.name;
       const remove=document.createElement('button'); remove.type='button'; remove.className='icon-button'; remove.textContent='×'; remove.setAttribute('aria-label',`Удалить файл ${file.name}`);
       remove.onclick=async () => { if (!confirm(`Удалить файл «${file.name}»?`)) return; remove.disabled=true; try { await api(`/tasks/${task.id}/attachments/${file.id}`,{method:'DELETE'}); await files(task,seq); } catch(e) { $('#attachment-error').textContent=e.message; remove.disabled=false; } };
-      row.append(link,remove); $('#attachment-list').append(row);
+      const heading=document.createElement('div'); heading.className='attachment-heading'; heading.append(link,remove); row.append(heading);
+      if (file.mediaType) {
+        const kind=file.mediaType.split('/')[0];
+        const media=document.createElement(kind==='image' ? 'img' : kind);
+        media.className='attachment-media';
+        if(kind==='image') { media.alt=file.name; media.loading='lazy'; }
+        else { media.controls=true; media.preload='none'; media.setAttribute('aria-label',file.name); if(kind==='video') media.playsInline=true; }
+        const error=document.createElement('p'); error.className='small muted'; error.hidden=true;
+        error.textContent='Не удалось открыть файл в браузере. Его можно скачать по ссылке выше.';
+        media.addEventListener('error',()=>{error.hidden=false; media.hidden=true;});
+        media.src=`${link.href}?preview=1`;
+        row.append(media,error);
+      }
+      $('#attachment-list').append(row);
     }
   }
+  $('#edit-dialog').addEventListener('close', () => { ++sequence; clearFiles(); });
   $('#attachment-input').addEventListener('change',async e => {
     const task=current, seq=sequence, selected=[...e.target.files]; e.target.disabled=true; $('#attachment-error').textContent='';
     try {
@@ -111,7 +129,7 @@ export function initTaskDetails({ api, getTasks, reload, notify }) {
   $('#edit-section').addEventListener('change', () => { $('#edit-parent').value=''; });
   function open(task) {
     current=task; const seq=++sequence; $('#edit-description').value=task.description || ''; preview=false; $('#description-preview').hidden=true; $('#title-preview').hidden=true; $('#description-toggle').textContent='Предпросмотр Markdown';
-    $('#attachment-list').replaceChildren(); $('#attachment-error').textContent=''; files(task,seq).catch(e=>{if(seq===sequence) $('#attachment-error').textContent=e.message;});
+    clearFiles(); $('#attachment-error').textContent=''; files(task,seq).catch(e=>{if(seq===sequence) $('#attachment-error').textContent=e.message;});
     const select=$('#edit-parent'); select.replaceChildren(new Option('Самостоятельная задача',''));
     const children=descendants(getTasks(),task.id);
     for(const {task:t,depth} of orderedTree(getTasks().filter(t=>(t.projectId ?? null)===(task.projectId ?? null) && (!t.completedAt || t.id===task.parentId) && t.id!==task.id && !children.has(t.id)))) select.add(new Option(`${'— '.repeat(depth)}${t.title}`,t.id));

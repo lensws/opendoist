@@ -351,3 +351,11 @@ input[type=checkbox], input[type=radio] { accent-color: var(--accent); }
  --text:#e6edf7;--muted:#b1bfd3;--faint:#9aabc3;--line:#344056;--border:#53657f;
  --success:#9cd9be;--danger:#f5a4a4;--deadline:#e5c18c;--backdrop:#050912b3;
 }
+
+.attachment-row{display:block;min-width:0;border-bottom:1px solid var(--line)}
+.attachment-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.attachment-heading a{min-width:0}.attachment-heading button{flex-shrink:0}
+.attachment-media{display:block;max-width:100%;margin:10px 0;border-radius:6px}
+img.attachment-media,video.attachment-media{max-height:360px;object-fit:contain}
+video.attachment-media,audio.attachment-media{width:100%}
+.attachment-media[hidden]{display:none}

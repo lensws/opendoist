@@ -1,3 +1,4 @@
+import { attachmentMediaType, serveAttachment } from './attachment-media.js';
 import { withDefaultReminder } from './default-reminder.js';
 import { searchWorkspace } from './search.js';
 import { BackupWorker } from './backups.js';
@@ -74,8 +75,8 @@ export function createApp({ password, database = './data/opendoist.sqlite', publ
         if (!assets.has(name)) return send(404, { error: 'Не найдено' });
         res.writeHead(200, { ...headers, 'Content-Type': mime[name.split('.').pop()] }); return res.end(assets.get(name));
       }
-      if (!['GET', 'POST', 'PATCH', 'DELETE'].includes(method)) return send(405, { error: 'Метод не поддерживается' });
-      if (method !== 'GET') {
+      if (!['GET', 'HEAD', 'POST', 'PATCH', 'DELETE'].includes(method)) return send(405, { error: 'Метод не поддерживается' });
+      if (!['GET', 'HEAD'].includes(method)) {
         const expectedOrigin = allowedOrigin || `http://${req.headers.host}`;
         if (req.headers.origin && req.headers.origin !== expectedOrigin) throw new AppError(403, 'Недопустимый источник запроса');
         if (req.headers['sec-fetch-site'] === 'cross-site') throw new AppError(403, 'Недопустимый источник запроса');
@@ -125,14 +126,14 @@ export function createApp({ password, database = './data/opendoist.sqlite', publ
       const fileMatch = /^\/api\/tasks\/([a-f0-9-]+)\/attachments(?:\/([a-f0-9-]+))?$/.exec(path);
       if (fileMatch) {
         const [, taskId, fileId] = fileMatch; store.get(taskId);
-        if (method === 'GET' && !fileId) return send(200, { files:store.attachments(taskId) });
+        if (method === 'GET' && !fileId) return send(200, { files:store.attachments(taskId).map(file => ({ ...file, mediaType:attachmentMediaType(file.name) })) });
         if (method === 'POST' && !fileId) {
           let name; try { name = decodeURIComponent(req.headers['x-file-name'] || ''); } catch { throw new AppError(400, 'Некорректное имя файла'); }
           return send(201, { file:store.addAttachment(taskId, name, await readFileBody(req)) });
         }
         const file = fileId && store.db.prepare('SELECT * FROM attachments WHERE id=? AND task_id=?').get(fileId, taskId);
         if (!file) throw new AppError(404, 'Файл не найден');
-        if (method === 'GET') { res.writeHead(200, { ...headers, 'Content-Type':'application/octet-stream', 'Content-Disposition':`attachment; filename*=UTF-8''${encodeURIComponent(file.name).replace(/'/g,'%27')}`, 'Content-Length':file.data.length }); return res.end(Buffer.from(file.data)); }
+        if (method === 'GET' || method === 'HEAD') return serveAttachment(req, res, file, headers);
         if (method === 'DELETE') { store.db.prepare('DELETE FROM attachments WHERE id=?').run(fileId); return send(200, { ok:true }); }
         throw new AppError(405, 'Метод не поддерживается');
       }

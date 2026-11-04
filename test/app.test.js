@@ -511,3 +511,39 @@ test('editor parses changed titles, preserves ordinary names and prioritizes exp
  task=(await app.request(`/api/tasks/${task.id}`,{revision:task.revision,title:'Встреча завтра в 15:00',parseTitle:true,clearSchedule:true},'PATCH')).data.task;
  assert.equal(task.due,null);assert.equal(task.title,'Встреча завтра в 15:00');
 });
+
+test('media attachments support authenticated previews, byte ranges, HEAD and safe download fallback', async t => {
+  const app=await start(); t.after(()=>app.close());
+  const login=await app.login(), cookie=login.response.headers.get('set-cookie').split(';')[0];
+  const task=(await app.request('/api/tasks',{source:'Media'})).data.task;
+  const base=`${app.base}/api/tasks/${task.id}/attachments`;
+  for (const [name,type] of [['photo.PNG','image/png'],['clip.mp4','video/mp4'],['song.mp3','audio/mpeg'],['drawing.svg',null],['page.html',null],['constructor',null]]) {
+    const upload=await fetch(base,{method:'POST',headers:{Cookie:cookie,'Content-Type':'application/octet-stream','X-File-Name':name},body:'0123456789'});
+    assert.equal(upload.status,201);
+    const {file}=await upload.json(), url=`${base}/${file.id}?preview=1`;
+    assert.equal((await fetch(url)).status,401);
+    const preview=await fetch(url,{headers:{Cookie:cookie}});
+    assert.equal(preview.headers.get('content-type'),type || 'application/octet-stream');
+    assert.match(preview.headers.get('content-disposition'),type ? /^inline;/ : /^attachment;/);
+    assert.equal(preview.headers.get('x-content-type-options'),'nosniff');
+    assert.match(preview.headers.get('content-security-policy'),/sandbox/);
+    assert.equal(await preview.text(),'0123456789');
+    const download=await fetch(`${base}/${file.id}`,{headers:{Cookie:cookie}});
+    assert.match(download.headers.get('content-disposition'),/^attachment;/); await download.arrayBuffer();
+    const listed=(await app.request(`/api/tasks/${task.id}/attachments`)).data.files.find(f=>f.id===file.id);
+    assert.equal(listed.mediaType,type);
+    if (!type) continue;
+    for (const [range,status,body,contentRange] of [
+      ['bytes=2-5',206,'2345','bytes 2-5/10'], ['bytes=7-',206,'789','bytes 7-9/10'],
+      ['bytes=-3',206,'789','bytes 7-9/10'], ['bytes=8-100',206,'89','bytes 8-9/10'],
+      ['bytes=10-',416,'','bytes */10'], ['bytes=5-2',416,'','bytes */10'],
+      ['bytes=-0',416,'','bytes */10'], ['bytes=0-1,3-4',416,'','bytes */10'],
+    ]) {
+      const response=await fetch(url,{headers:{Cookie:cookie,Range:range}});
+      assert.equal(response.status,status,range); assert.equal(response.headers.get('content-range'),contentRange);
+      assert.equal(await response.text(),body);
+    }
+    const head=await fetch(url,{method:'HEAD',headers:{Cookie:cookie}});
+    assert.equal(head.status,200); assert.equal(head.headers.get('content-length'),'10'); assert.equal(await head.text(),'');
+  }
+});
