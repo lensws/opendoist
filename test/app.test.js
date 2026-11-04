@@ -459,3 +459,17 @@ test('default reminders are persisted on creation and first time assignment but 
   untimed=(await app.request(`/api/tasks/${untimed.id}`,{title:untimed.title,revision:untimed.revision,source:'Позвонить завтра в 16:00',timezone:'UTC'},'PATCH')).data.task;
   assert.equal(untimed.reminders[0].minutes,10);
 });
+
+test('explicit unscheduled creation preserves the full source and bypasses only date parsing', async t => {
+  const app=await start();t.after(()=>app.close());await app.login();
+  const source='Подумать о философии слова `за 10 мин до`';
+  assert.equal((await app.request('/api/tasks',{source})).response.status,422);
+  const project=(await app.request('/api/projects',{name:'Работа',iconType:'color',color:'#c95736',emoji:''})).data.entity;
+  const saved=await app.request('/api/tasks',{source,withoutSchedule:true,projectId:project.id});
+  assert.equal(saved.response.status,201);const task=saved.data.task;
+  assert.equal(task.title,source);assert.equal(task.source,source);assert.equal(task.projectId,project.id);
+  assert.equal(task.due,null);assert.equal(task.recurrence,null);assert.equal(task.deadline,null);assert.equal(task.status,'unscheduled');
+  assert.equal((await app.request('/api/tasks',{source:' ',withoutSchedule:true})).response.status,400);
+  assert.equal((await app.request('/api/tasks',{source:'x'.repeat(501),withoutSchedule:true})).response.status,400);
+  assert.equal((await app.request('/api/tasks',{source,withoutSchedule:'yes'})).response.status,400);
+});

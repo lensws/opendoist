@@ -174,7 +174,7 @@ function previewText(result) {
   return message;
 }
 async function refreshPreview() {
-  const sequence = ++previewSequence; preview = null; $('#add-submit').disabled = true;
+  const sequence = ++previewSequence; preview = null; $('#add-submit').disabled = true; $('#add-without-schedule').hidden = true; $('#add-without-schedule').disabled = false;
   const source = $('#task-input').value.trim(); const el = $('#preview');
   el.className = 'preview';
   el.hidden = !source;
@@ -186,10 +186,10 @@ async function refreshPreview() {
     taskInput.highlight(source, result.parsed.status === 'needs_review' ? [] : result.parsed.spans);
     preview = { ...result, source }; el.textContent = previewText(result);
     const valid = result.parsed.status !== 'needs_review' && !!result.parsed.title;
-    el.className = `preview ${valid ? 'ready' : 'error'}`; $('#add-submit').disabled = !valid;
-  } catch (e) { if (sequence === previewSequence) { el.className = 'preview error'; el.textContent = e.message; } }
+    el.className = `preview ${valid ? 'ready' : 'error'}`; $('#add-submit').disabled = !valid; $('#add-without-schedule').hidden = valid;
+  } catch (e) { if (sequence === previewSequence) { el.className = 'preview error'; el.textContent = e.message; $('#add-without-schedule').hidden = false; } }
 }
-$('#task-input').addEventListener('input', () => { previewSequence++; preview = null; $('#add-submit').disabled = true; clearTimeout(timer); timer = setTimeout(refreshPreview, 250); });
+$('#task-input').addEventListener('input', () => { previewSequence++; preview = null; $('#add-submit').disabled = true; $('#add-without-schedule').hidden = true; clearTimeout(timer); timer = setTimeout(refreshPreview, 250); });
 $('#task-input').addEventListener('keydown', event => {
   if (event.key !== 'Enter' || event.defaultPrevented || event.isComposing) return;
   const submit = matchesSubmitShortcut(event, settings.submitShortcut);
@@ -197,10 +197,12 @@ $('#task-input').addEventListener('keydown', event => {
   if (submit && !$('#add-submit').disabled) $('#add-form').requestSubmit($('#add-submit'));
 });
 $('#add-form').addEventListener('submit', async event => {
-  event.preventDefault(); if (!preview || preview.source !== $('#task-input').value.trim()) return;
-  $('#add-submit').disabled = true;
-  try { await api('/tasks', { method: 'POST', body: { source: preview.source, reference: preview.reference, ...settings, ...projectUI.placement('add') } }); $('#task-input').value = ''; await refreshPreview(); composerOpen = false; await load(); $('#add-open').focus(); notify('Задача добавлена'); }
-  catch (e) { $('#page-error').textContent = e.message; $('#add-submit').disabled = false; }
+  event.preventDefault();
+  const withoutSchedule = event.submitter === $('#add-without-schedule'), source = $('#task-input').value.trim();
+  if (!source || (!withoutSchedule && (!preview || preview.source !== source))) return;
+  $('#add-submit').disabled = true; $('#add-without-schedule').disabled = true;
+  try { await api('/tasks', { method: 'POST', body: { source, reference: preview?.reference, ...settings, withoutSchedule, ...projectUI.placement('add') } }); $('#task-input').value = ''; await refreshPreview(); composerOpen = false; await load(); $('#add-open').focus(); notify('Задача добавлена'); }
+  catch (e) { $('#page-error').textContent = e.message; $('#add-submit').disabled = withoutSchedule; $('#add-without-schedule').disabled = false; }
 });
 document.querySelectorAll('[data-view]').forEach(el => el.addEventListener('click', async () => { $('#search').value=''; view = el.dataset.view; if ($('#settings-dialog').open) $('#settings-dialog').close(); render(); try { if (view === 'history') await load(); } catch (e) { $('#page-error').textContent = e.message; } }));
 $('#search').addEventListener('input', render);

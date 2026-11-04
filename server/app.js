@@ -169,7 +169,9 @@ export function createApp({ password, database = './data/opendoist.sqlite', publ
         return send(200, { ...preview, upcoming });
       }
       if (path === '/api/tasks' && method === 'POST') {
-        const body = await readJSON(req, 100000), { parsed } = parse(body);
+        const body = await readJSON(req, 100000);
+        if (body.withoutSchedule !== undefined && typeof body.withoutSchedule !== 'boolean') throw new AppError(400, 'Некорректный выбор срока');
+        const parsed = body.withoutSchedule ? { source:text(body.source), title:text(body.source), language:['ru','en'].includes(body.language) ? body.language : 'auto', status:'unscheduled', due:null, recurrence:null, deadline:null, spans:[], warnings:[] } : parse(body).parsed;
         return send(201, { task: store.create(withDefaultReminder({ ...saveable(parsed), description:description(body.description), parentId:body.parentId ?? null, ...store.placement(body.projectId ?? null, body.sectionId ?? null) }, notifications.config())) });
       }
       const rescheduleMatch = /^\/api\/tasks\/([a-f0-9-]+)\/reschedule$/.exec(path);
