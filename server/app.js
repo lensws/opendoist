@@ -1,3 +1,4 @@
+import { withDefaultReminder } from './default-reminder.js';
 import { searchWorkspace } from './search.js';
 import { BackupWorker } from './backups.js';
 import { rescheduleTask } from './calendar.js';
@@ -169,12 +170,12 @@ export function createApp({ password, database = './data/opendoist.sqlite', publ
       }
       if (path === '/api/tasks' && method === 'POST') {
         const body = await readJSON(req, 100000), { parsed } = parse(body);
-        return send(201, { task: store.create({ ...saveable(parsed), description:description(body.description), parentId:body.parentId ?? null, ...store.placement(body.projectId ?? null, body.sectionId ?? null) }) });
+        return send(201, { task: store.create(withDefaultReminder({ ...saveable(parsed), description:description(body.description), parentId:body.parentId ?? null, ...store.placement(body.projectId ?? null, body.sectionId ?? null) }, notifications.config())) });
       }
       const rescheduleMatch = /^\/api\/tasks\/([a-f0-9-]+)\/reschedule$/.exec(path);
       if (rescheduleMatch && method === 'POST') {
         const body = await readJSON(req);
-        return send(200, { task: store.mutate(rescheduleMatch[1], body.revision, task => rescheduleTask(task, body)) });
+        return send(200, { task: store.mutate(rescheduleMatch[1], body.revision, task => withDefaultReminder(rescheduleTask(task, body), notifications.config(), task)) });
       }
       const reminderMatch = /^\/api\/tasks\/([a-f0-9-]+)\/reminders(?:\/([a-f0-9-]+))?$/.exec(path);
       if (reminderMatch && (method === 'POST' || method === 'DELETE')) {
@@ -206,7 +207,7 @@ export function createApp({ password, database = './data/opendoist.sqlite', publ
           const placement = store.placement(body.projectId === undefined ? previous.projectId ?? null : body.projectId, body.sectionId === undefined ? previous.sectionId ?? null : body.sectionId);
           const next = { ...previous, ...placement, ...(schedule || {}), deadline: schedule?.deadline ?? previous.deadline, description:body.description === undefined ? previous.description || '' : description(body.description), title };
           if (body.clearSchedule === true) { next.due = null; next.recurrence = null; next.status = 'unscheduled'; }
-          return next;
+          return withDefaultReminder(next, notifications.config(), previous);
         });
         return send(200, { task });
       }

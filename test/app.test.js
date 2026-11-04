@@ -138,11 +138,12 @@ test('notification API protects credentials and reminder mutations with session,
   let task = (await app.request('/api/tasks', { source: 'Встреча завтра в 15' })).data.task;
   const body = { kind: 'before', minutes: 30, channels: ['telegram'], revision: task.revision };
   const created = await app.request(`/api/tasks/${task.id}/reminders`, body);
-  assert.equal(created.response.status, 201); task = created.data.task; assert.equal(task.reminders.length, 1);
+  assert.equal(created.response.status, 201); task = created.data.task; assert.equal(task.reminders.length, 2);
   assert.equal((await app.request(`/api/tasks/${task.id}/reminders`, body)).response.status, 409);
   assert.equal((await app.request(`/api/tasks/${task.id}/reminders`, { ...body, revision: task.revision }, 'POST', { Origin: 'https://evil.example' })).response.status, 403);
-  const removed = await app.request(`/api/tasks/${task.id}/reminders/${task.reminders[0].id}`, { revision: task.revision }, 'DELETE');
-  assert.equal(removed.data.task.reminders.length, 0);
+  const removed = await app.request(`/api/tasks/${task.id}/reminders/${task.reminders[1].id}`, { revision: task.revision }, 'DELETE');
+  assert.equal(removed.data.task.reminders.length, 1);
+  assert.equal(removed.data.task.reminders[0].minutes, 10);
   assert.doesNotMatch(JSON.stringify((await app.request('/api/export')).data), /aaaaaaaaaa/);
 });
 
@@ -443,4 +444,18 @@ test('global search covers placements, completed tasks, full note bodies and old
   for(let i=0;i<101;i++){const item=app.store.create({title:'Повтор истории'});app.store.complete(item.id,item.revision);}
   assert.equal((await search('Старый')).groups.history.total,1);
   const many=await search('Повтор');assert.equal(many.groups.completed.total,101);assert.equal(many.groups.completed.items.length,50);
+});
+
+test('default reminders are persisted on creation and first time assignment but respect removal', async t => {
+  const app=await start();t.after(()=>app.close());await app.login();
+  const config=app.notifications.config();config.email.enabled=true;app.store.saveNotificationConfig(config);
+  let task=(await app.request('/api/tasks',{source:'Встреча завтра в 15:00',timezone:'UTC'})).data.task;
+  assert.equal(task.reminders[0].minutes,10);assert.deepEqual(task.reminders[0].channels,['email']);
+  task=(await app.request(`/api/tasks/${task.id}/reminders/${task.reminders[0].id}`,{revision:task.revision},'DELETE')).data.task;
+  task=(await app.request(`/api/tasks/${task.id}`,{title:'Встреча новая',revision:task.revision},'PATCH')).data.task;
+  assert.deepEqual(task.reminders,[]);
+  let untimed=(await app.request('/api/tasks',{source:'Позвонить завтра',timezone:'UTC'})).data.task;
+  assert.equal(untimed.reminders,undefined);
+  untimed=(await app.request(`/api/tasks/${untimed.id}`,{title:untimed.title,revision:untimed.revision,source:'Позвонить завтра в 16:00',timezone:'UTC'},'PATCH')).data.task;
+  assert.equal(untimed.reminders[0].minutes,10);
 });

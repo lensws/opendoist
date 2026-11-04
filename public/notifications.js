@@ -32,7 +32,7 @@ export function initNotifications({ api, reload, getSettings, notify }) {
       config = (await api('/notifications')).config;
       $('#reminder-error').textContent = '';
       $('#reminder-kind').value = task.due?.instant && !task.due.allDay ? 'before' : 'absolute';
-      $('#reminder-amount').value = '30'; $('#reminder-unit').value = '1'; $('#reminder-local').value = '';
+      $('#reminder-amount').value = '10'; $('#reminder-unit').value = '1'; $('#reminder-local').value = '';
       $('#reminder-zone').value = task.due?.timezone || getSettings().timezone;
       for (const channel of ['email', 'telegram']) { $(`#reminder-${channel}`).disabled = !config[channel].enabled; $(`#reminder-${channel}`).checked = config[channel].enabled; }
       $('#reminder-channel-note').textContent = ['email', 'telegram'].some(c => config[c].enabled) ? 'Отправим в выбранные каналы.' : 'Сначала подключите email или Telegram в настройках.';

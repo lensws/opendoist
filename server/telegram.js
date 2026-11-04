@@ -1,3 +1,4 @@
+import { withDefaultReminder } from './default-reminder.js';
 import { createHash } from 'node:crypto';
 import { parseTask } from '../src/index.js';
 import { notificationDefaults } from './notifications.js';
@@ -72,7 +73,7 @@ export class TelegramInbox {
     let parsed;
     try { parsed = parseTask(source, { timezone: settings.timezone, language: settings.language, now: new Date(message.date * 1000) }); } catch { return 'Не удалось распознать задачу. Уточните дату и время.'; }
     if (parsed.status === 'needs_review' || !parsed.title.trim()) return 'Задача не добавлена: уточните название или неоднозначную дату.';
-    const task = this.store.create({ ...parsed, projectId, sectionId: null });
+    const task = this.store.create(withDefaultReminder({ ...parsed, projectId, sectionId: null }, this.store.notificationConfig()));
     const project = this.store.projects().find(p => p.id === projectId);
     return `Добавлено: ${task.title}\n${project?.name || 'Входящие'}\n${task.due ? `${task.due.date}${task.due.time ? ` в ${task.due.time}` : ''} (${task.due.timezone})` : 'Без срока'}${task.recurrence ? '\n↻ Повторяющаяся задача' : ''}`;
   }
