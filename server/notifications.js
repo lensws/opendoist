@@ -73,8 +73,18 @@ export function makeReminder(body, task, config, now = Date.now()) {
 export function reminderTime(reminder, task) {
   return reminder.kind === 'absolute' ? Date.parse(reminder.at) : task.due?.instant && !task.due.allDay ? Date.parse(task.due.instant) - reminder.minutes * 60000 : NaN;
 }
-const dueText = task => task.due ? `${task.due.date}${task.due.time ? ` в ${task.due.time}` : ''} (${task.due.timezone})` : 'Без срока';
-export function digestMessage(tasks, date, zone) {
+function relativeDate(date, zone, now) {
+  const today = DateTime.fromMillis(now, { zone }).startOf('day');
+  if (date === today.toISODate()) return 'сегодня';
+  if (date === today.plus({ days: 1 }).toISODate()) return 'завтра';
+  if (date === today.minus({ days: 1 }).toISODate()) return 'вчера';
+  return DateTime.fromISO(date, { zone }).setLocale('ru').toFormat('d MMMM yyyy');
+}
+export function dueText(task, now = Date.now()) {
+  if (!task.due) return 'Без срока';
+  return `${relativeDate(task.due.date, task.due.timezone, now)}${!task.due.allDay && task.due.time ? ` в ${task.due.time}` : ''}`;
+}
+export function digestMessage(tasks, date, zone, now = Date.now()) {
   const due = [], overdue = [];
   for (const task of tasks.filter(t => !t.completedAt)) {
     if (!task.due) continue;
@@ -90,12 +100,16 @@ export function digestMessage(tasks, date, zone) {
       }
     }
   }
-  const lines = [`План на ${date}`, `Часовой пояс: ${zone}`, ''];
-  due.sort((a, b) => (a.due.time || '').localeCompare(b.due.time || ''));
-  const line = task => `• ${task.title} — ${dueText(task)}`;
+  const lines = [];
+  const localTime = task => task.due.allDay ? '' : DateTime.fromISO(task.due.instant).setZone(zone).toFormat('HH:mm');
+  due.sort((a, b) => localTime(a).localeCompare(localTime(b)));
+  const line = task => `• ${task.title}${localTime(task) ? ` в ${localTime(task)}` : ''}`;
   lines.push(due.length ? `На этот день: ${due.length}` : 'На этот день задач нет.', ...due.map(line));
-  if (overdue.length) lines.push('', `Просроченные: ${overdue.length}`, ...overdue.map(line));
-  return { subject: `OpenDoist · План на ${date}`, text: lines.join('\n') };
+  if (overdue.length) lines.push('', `Просроченные: ${overdue.length}`, ...overdue.map(task => {
+    const localDate = task.due.allDay ? task.due.date : DateTime.fromISO(task.due.instant).setZone(zone).toISODate();
+    return `• ${task.title} — ${relativeDate(localDate, zone, now)}${localTime(task) ? ` в ${localTime(task)}` : ''}`;
+  }));
+  return { subject: `OpenDoist · План на ${relativeDate(date, zone, now)}`, text: lines.join('\n') };
 }
 export async function sendNotification(channel, config, message, key, { fetcher = fetch, mailer = nodemailer } = {}) {
   if (channel === 'telegram') {
@@ -161,10 +175,10 @@ export class NotificationWorker {
         let task; try { task = this.store.get(row.task_id); } catch { valid = false; }
         const reminder = task?.reminders?.find(r => r.id === event.reminderId);
         valid = valid && task && !task.completedAt && reminder && reminder.channels.includes(row.channel) && reminderTime(reminder, task) === event.at;
-        if (valid) message = { subject: 'OpenDoist · Напоминание', text: `${task.title}\nСрок: ${dueText(task)}` };
+        if (valid) message = { subject: 'OpenDoist · Напоминание', text: `${task.title}\nСрок: ${dueText(task, attemptTime)}` };
       } else {
         valid = valid && current.digest.enabled && current.digest.channels.includes(row.channel) && current.digest.updatedAt === event.updatedAt;
-        if (valid) message = digestMessage(this.store.list(), event.date, event.timezone);
+        if (valid) message = digestMessage(this.store.list(), event.date, event.timezone, attemptTime);
       }
       if (!valid) { db.prepare("UPDATE notification_outbox SET status='cancelled',lease_until=0 WHERE key=?").run(row.key); continue; }
       if (this.publicUrl) message.text += `\n\n${this.publicUrl}`;

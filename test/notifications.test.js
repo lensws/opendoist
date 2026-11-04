@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { DateTime } from 'luxon';
 import { Store } from '../server/store.js';
 import { parseTask } from '../src/index.js';
-import { NotificationWorker, notificationDefaults, validateConfig, publicConfig, makeReminder, digestMessage, sendNotification } from '../server/notifications.js';
+import { NotificationWorker, notificationDefaults, validateConfig, publicConfig, makeReminder, dueText, digestMessage, sendNotification } from '../server/notifications.js';
 
 const base = Date.parse('2030-05-10T08:00:00Z');
 function config() {
@@ -107,7 +107,7 @@ test('morning/evening digests respect timezone, target date, restart deduplicati
       const worker = new NotificationWorker(store, { now: () => now, send: async (_ch, _cfg, message) => messages.push(message) });
       await worker.tick(); assert.equal(messages.length, 0);
       now += 60000; await worker.tick(); await worker.tick();
-      assert.equal(messages.length, 1); assert.match(messages[0].subject, mode === 'morning' ? /2030-05-10/ : /2030-05-11/);
+      assert.equal(messages.length, 1); assert.match(messages[0].subject, mode === 'morning' ? /сегодня/ : /завтра/);
       await new NotificationWorker(store, { now: () => now, send: async () => messages.push('duplicate') }).tick(); assert.equal(messages.length, 1);
       now += 86400000; c.digest.updatedAt = now + 1; store.saveNotificationConfig(c); await worker.tick(); assert.equal(messages.length, 1);
     } finally { store.close(); }
@@ -198,4 +198,28 @@ test('both digests send today in the morning and tomorrow in the evening without
   assert.deepEqual(events.map(e=>[e.mode,e.date]),[['morning','2030-05-10'],['evening','2030-05-11']]);
   assert.throws(()=>validateConfig({digest:{eveningTime:'25:00'}},c));
  }finally{await worker.stop();store.close();}
+});
+
+
+test('notification dates are relative to local delivery day, including midnight and year boundaries', () => {
+  const task = { due: { date: '2027-01-01', time: '00:05', allDay: false, timezone: 'Europe/Moscow' } };
+  assert.equal(dueText(task, Date.parse('2026-12-31T20:55:00Z')), 'завтра в 00:05');
+  assert.equal(dueText(task, Date.parse('2026-12-31T21:01:00Z')), 'сегодня в 00:05');
+  assert.equal(dueText(task, Date.parse('2027-01-01T21:01:00Z')), 'вчера в 00:05');
+  assert.equal(dueText(task, Date.parse('2026-12-25T12:00:00Z')), '1 января 2027 в 00:05');
+  assert.equal(dueText({ due: { ...task.due, allDay: true, time: null } }, Date.parse('2026-12-31T21:01:00Z')), 'сегодня');
+  assert.equal(dueText({}), 'Без срока');
+});
+
+test('digest omits repeated dates, keeps full titles and converts times to digest timezone', () => {
+  const tasks = [
+    { title: 'Транш автокредит 36к', due: { allDay: true, date: '2026-11-05', timezone: 'UTC' } },
+    { title: 'Рассылка о ДР', due: { allDay: false, date: '2026-11-05', time: '17:00', instant: '2026-11-05T17:00:00Z', timezone: 'UTC' } },
+  ];
+  const message = digestMessage(tasks, '2026-11-05', 'Europe/Moscow', Date.parse('2026-11-04T17:00:00Z'));
+  assert.equal(message.subject, 'OpenDoist · План на завтра');
+  assert.equal(message.text, 'На этот день: 2\n• Транш автокредит 36к\n• Рассылка о ДР в 20:00');
+  const overdue = digestMessage(tasks, '2026-11-06', 'Europe/Moscow', Date.parse('2026-11-06T05:00:00Z'));
+  assert.match(overdue.text, /Транш автокредит 36к — вчера/);
+  assert.match(overdue.text, /Рассылка о ДР — вчера в 20:00/);
 });
