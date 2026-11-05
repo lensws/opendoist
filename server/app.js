@@ -238,6 +238,7 @@ export function createApp({ password, database = './data/opendoist.sqlite', publ
           const placement = store.placement(body.projectId === undefined ? previous.projectId ?? null : body.projectId, body.sectionId === undefined ? previous.sectionId ?? null : body.sectionId);
           const next = { ...previous, ...placement, ...(schedule || {}), deadline: schedule?.deadline ?? previous.deadline, description:body.description === undefined ? previous.description || '' : description(body.description), title };
           if (body.clearSchedule === true) { next.due = null; next.recurrence = null; next.status = 'unscheduled'; }
+          if (body.finishRecurrence === true) return store.completeSnapshot(next, true);
           return withDefaultReminder(next, notifications.config(), previous);
         });
         return send(200, { task });

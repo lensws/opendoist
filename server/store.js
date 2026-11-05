@@ -275,14 +275,16 @@ export class Store {
       this.db.exec('COMMIT'); return next;
     } catch (error) { this.db.exec('ROLLBACK'); throw error; }
   }
+  completeSnapshot(task, permanently = false) {
+    if (task.completedAt) throw new AppError(409, 'Задача уже выполнена');
+    if (permanently && !task.recurrence) throw new AppError(400, 'Задача не повторяется');
+    const now = new Date().toISOString();
+    this.db.prepare('INSERT INTO completions VALUES (?,?,?,?)').run(randomUUID(), task.id, now, JSON.stringify(task));
+    const next = task.recurrence && !permanently ? nextAfterCompletion(task, now) : null;
+    return { ...task, due: next ?? task.due, completedAt: next ? null : now };
+  }
   complete(id, revision) {
-    return this.mutate(id, revision, task => {
-      if (task.completedAt) throw new AppError(409, 'Задача уже выполнена');
-      const now = new Date().toISOString();
-      this.db.prepare('INSERT INTO completions VALUES (?,?,?,?)').run(randomUUID(), id, now, JSON.stringify(task));
-      const next = task.recurrence ? nextAfterCompletion(task, now) : null;
-      return { ...task, due: next ?? task.due, completedAt: next ? null : now };
-    });
+    return this.mutate(id, revision, task => this.completeSnapshot(task));
   }
   undo(id, revision) {
     return this.mutate(id, revision, task => {

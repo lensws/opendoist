@@ -574,3 +574,24 @@ test('attachment cache revalidates without a body and cannot bypass login or del
   const deleted=await fetch(url,{headers:{Cookie:cookie,'If-None-Match':etag}});
   assert.equal(deleted.status,404);await deleted.text();
 });
+
+test('finish recurrence saves edits atomically, preserves due date and supports undo with stale-write protection',async t=>{
+ const app=await start();t.after(()=>app.close());await app.login();
+ let task=(await app.request('/api/tasks',{source:'Полив каждый день в 9',timezone:'Europe/Moscow'})).data.task;
+ const due=task.due, recurrence=task.recurrence;
+ const finished=await app.request(`/api/tasks/${task.id}`,{revision:task.revision,title:'Полив цветов',description:'Готово',finishRecurrence:true},'PATCH');
+ assert.equal(finished.response.status,200);task=finished.data.task;
+ assert.ok(task.completedAt);assert.deepEqual(task.due,due);assert.deepEqual(task.recurrence,recurrence);
+ assert.equal(task.title,'Полив цветов');assert.equal(task.description,'Готово');
+ assert.equal((await app.request('/api/history')).data.history.length,1);
+ assert.equal((await app.request(`/api/tasks/${task.id}`,{revision:task.revision-1,title:'Старый текст',finishRecurrence:true},'PATCH')).response.status,409);
+ assert.equal((await app.request(`/api/tasks/${task.id}`,{revision:task.revision,title:task.title,finishRecurrence:true},'PATCH')).response.status,409);
+ const restored=(await app.request(`/api/tasks/${task.id}/undo`,{revision:task.revision})).data.task;
+ assert.equal(restored.completedAt,null);assert.deepEqual(restored.due,due);assert.deepEqual(restored.recurrence,recurrence);assert.equal(restored.title,'Полив цветов');
+ assert.equal((await app.request('/api/history')).data.history.length,0);
+ const rejected=await app.request(`/api/tasks/${task.id}`,{revision:restored.revision,title:'Не сохранять',clearSchedule:true,finishRecurrence:true},'PATCH');
+ assert.equal(rejected.response.status,400);
+ const unchanged=(await app.request('/api/tasks')).data.tasks.find(t=>t.id===task.id);assert.equal(unchanged.title,'Полив цветов');assert.equal(unchanged.revision,restored.revision);
+ const normal=(await app.request(`/api/tasks/${task.id}/complete`,{revision:restored.revision})).data.task;
+ assert.equal(normal.completedAt,null);assert.notDeepEqual(normal.due,due);
+});

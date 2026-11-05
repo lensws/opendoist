@@ -246,7 +246,7 @@ function notify(message, undo = null) {
   $('#toast-undo').onclick = async () => { $('#toast-undo').disabled = true; try { await undo(); $('#toast').hidden = true; } catch (e) { $('#toast-text').textContent = e.message; } finally { $('#toast-undo').disabled = false; } };
   toastTimer = setTimeout(() => { $('#toast').hidden = true; }, 9000);
 }
-function openEdit(task) { clearTimeout(editTimer);editSequence++; editTask = task; $('#edit-title-preview').textContent='';drawEditReminders(); projectUI.fillPlacement('edit', task.projectId, task.sectionId); $('#edit-title').value = task.title; taskDetails.open(task); $('#edit-schedule').value = ''; $('#edit-clear').checked = false; $('#edit-preview').textContent = `Текущий срок: ${dateLabel(task.due)}${task.recurrence ? ` · ${recurringLabel(task)}` : ''}`; $('#edit-error').textContent = ''; $('#edit-dialog').showModal(); }
+function openEdit(task) { $('#edit-finish-repeat').hidden=!task.recurrence || !!task.completedAt; clearTimeout(editTimer);editSequence++; editTask = task; $('#edit-title-preview').textContent='';drawEditReminders(); projectUI.fillPlacement('edit', task.projectId, task.sectionId); $('#edit-title').value = task.title; taskDetails.open(task); $('#edit-schedule').value = ''; $('#edit-clear').checked = false; $('#edit-preview').textContent = `Текущий срок: ${dateLabel(task.due)}${task.recurrence ? ` · ${recurringLabel(task)}` : ''}`; $('#edit-error').textContent = ''; $('#edit-dialog').showModal(); }
 let editTimer, editSequence = 0, titleTimer, titleSequence=0;
 function drawEditReminders(){
   const list=$('#edit-reminders-list');list.replaceChildren();
@@ -271,14 +271,18 @@ $('#edit-schedule').addEventListener('input', () => {
   clearTimeout(editTimer); const sequence = ++editSequence;
   editTimer = setTimeout(async () => { if (!$('#edit-schedule').value.trim()) { $('#edit-preview').textContent = 'Текущее расписание сохранится.'; return; } try { const result = await api('/parse', { method: 'POST', body: { source: `Task ${$('#edit-schedule').value}`, ...settings, timezone: editTask.due?.timezone || settings.timezone } }); if (sequence === editSequence) $('#edit-preview').textContent = previewText(result); } catch (e) { if (sequence === editSequence) $('#edit-preview').textContent = e.message; } }, 250);
 });
-$('#edit-form').addEventListener('submit', async event => {
-  event.preventDefault(); const button = event.submitter; button.disabled = true;
-  const body = { title: $('#edit-title').value.trim(), description: $('#edit-description').value, revision: editTask.revision, parseTitle:$('#edit-title').value.trim()!==editTask.title, timezone:editTask.due?.timezone || settings.timezone, language:settings.language, clearSchedule: $('#edit-clear').checked, ...projectUI.placement('edit') };
+async function saveEditedTask(event) {
+  event.preventDefault(); const button = event.submitter || event.currentTarget; button.disabled = true;
+  const finishRecurrence=button.id==='edit-finish-repeat-button';
+  if(finishRecurrence && ($('#edit-parent').value || null)!==(editTask.parentId || null)){ $('#edit-error').textContent='Сначала сохраните изменение родительской задачи.'; button.disabled=false;return; }
+  const body = { finishRecurrence, title: $('#edit-title').value.trim(), description: $('#edit-description').value, revision: editTask.revision, parseTitle:$('#edit-title').value.trim()!==editTask.title, timezone:editTask.due?.timezone || settings.timezone, language:settings.language, clearSchedule: $('#edit-clear').checked, ...projectUI.placement('edit') };
   const expression = $('#edit-schedule').value.trim();
   if (expression && !body.clearSchedule) { body.source = `Task ${expression}`; Object.assign(body, settings, { timezone: editTask.due?.timezone || settings.timezone }); }
-  try { const result = await api(`/tasks/${editTask.id}`, { method: 'PATCH', body }); editTask = result.task; await taskDetails.saveParent(editTask, editTask.parentId); $('#edit-dialog').close(); await load(); notify('Изменения сохранены'); }
+  try { const result = await api(`/tasks/${editTask.id}`, { method: 'PATCH', body }); editTask = result.task; if(!finishRecurrence) await taskDetails.saveParent(editTask, editTask.parentId); $('#edit-dialog').close(); await load(); if(finishRecurrence) { const finished=editTask; notify('Повторение завершено',async()=>{await api(`/tasks/${finished.id}/undo`,{method:'POST',body:{revision:finished.revision}});await load();}); } else notify('Изменения сохранены'); }
   catch (e) { $('#edit-error').textContent = e.message; } finally { button.disabled = false; }
-});
+}
+$('#edit-form').addEventListener('submit',saveEditedTask);
+$('#edit-finish-repeat-button').addEventListener('click',event=>{if($('#edit-form').reportValidity())saveEditedTask(event);});
 initSettingsNavigation();
 document.querySelectorAll('[data-close]').forEach(el => el.addEventListener('click', () => document.getElementById(el.dataset.close).close()));
 function appearanceDraft() {
