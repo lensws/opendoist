@@ -14,10 +14,9 @@
       <button data-view="inbox" class="nav-item"><span class="nav-icon">▣</span>Входящие<span class="count" id="count-inbox">0</span></button>
       <button data-view="today" class="nav-item"><span class="nav-icon">☀</span>Сегодня<span class="count" id="count-today">0</span></button>
       <button data-view="upcoming" class="nav-item"><span class="nav-icon">▦</span>Предстоящие<span class="count" id="count-upcoming">0</span></button>
-      <button data-view="notes" class="nav-item"><span class="nav-icon">▤</span>Заметки</button>
     </nav>
     <div class="projects-heading"><span>ПРОЕКТЫ</span><button id="project-add" class="icon-button" aria-label="Добавить проект">＋</button></div><div id="project-list"></div>
-    <div class="sidebar-bottom"><button id="settings-open" class="nav-item"><span class="nav-icon" aria-hidden="true">⚙</span>Настройки</button></div>
+    <div class="sidebar-bottom"><button data-view="notes" class="nav-item"><span class="nav-icon">▤</span>Заметки</button><button id="settings-open" class="nav-item"><span class="nav-icon" aria-hidden="true">⚙</span>Настройки</button></div>
   </aside>
   <main>
     <header class="mobile-toolbar"><button id="menu-open" class="mobile-menu-button" aria-label="Открыть меню" aria-controls="sidebar" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></svg></button><span id="mobile-view-title">Входящие</span></header>
@@ -49,7 +48,7 @@
 <dialog id="settings-dialog" aria-labelledby="settings-title">
   <form id="settings-form">
     <div class="dialog-heading"><h2 id="settings-title">Настройки</h2><button type="button" data-close="settings-dialog" class="icon-button" aria-label="Закрыть">×</button></div>
-    <fieldset class="appearance-section"><legend>Добавление задачи</legend><label for="submit-shortcut">Сочетание клавиш</label><select id="submit-shortcut"><option value="enter">Enter</option><option value="ctrl-enter">Ctrl+Enter (⌘+Enter на Mac)</option></select></fieldset>
+    <fieldset class="appearance-section"><legend>Основное</legend><label for="start-page">Стартовая страница</label><select id="start-page"><option value="inbox">Входящие</option><option value="today">Сегодня</option><option value="upcoming">Предстоящие</option></select><label for="submit-shortcut">Сочетание клавиш</label><select id="submit-shortcut"><option value="enter">Enter</option><option value="ctrl-enter">Ctrl+Enter (⌘+Enter на Mac)</option></select></fieldset>
     <fieldset class="appearance-section"><legend>Архив задач</legend><div class="archive-links">      <button data-view="completed" type="button" class="secondary"><span class="nav-icon">✓</span>Выполненные<span class="count" id="count-completed">0</span></button>
       <button data-view="history" type="button" class="secondary"><span class="nav-icon">↺</span>История</button>
 </div></fieldset>

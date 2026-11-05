@@ -88,3 +88,18 @@ test('relative dates follow supplied timezone near midnight', () => {
   const task = parseTask('Read tomorrow', { now: '2026-11-02T23:30:00Z', timezone: 'Asia/Tokyo' });
   assert.equal(task.due.date, '2026-11-04');
 });
+
+test('date and recurrence parsing ignores letter case while preserving task title and spans', () => {
+  const options={now:'2026-11-05T10:00:00Z',timezone:'Europe/Moscow'};
+  for(const phrase of ['завтра в 9 вечера','следующая пятница','каждый месяц в 9 утра','каждую неделю утром','каждый год вечером','каждый рабочий день в 10','каждый месяц начиная в 9 утра','every week at 9am','every month starting at 9am','tomorrow at 7pm','без срока']) {
+    const original=parseTask(`Проект ABC ${phrase}`,options);
+    for(const variant of [phrase.toUpperCase(),phrase[0].toUpperCase()+phrase.slice(1)]) {
+      const source=`Проект ABC ${variant}`, actual=parseTask(source,options);
+      assert.equal(actual.status,original.status,source);
+      assert.deepEqual(actual.due,original.due,source);
+      assert.deepEqual(actual.recurrence,original.recurrence,source);
+      assert.equal(actual.title,original.title,source);
+      for(const span of actual.spans) assert.equal(source.slice(span.start,span.end),span.text);
+    }
+  }
+});

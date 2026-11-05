@@ -15,7 +15,7 @@ import { initTransfer } from './transfer.js';
 import { initNotifications } from './notifications.js';
 const $ = selector => document.querySelector(selector);
 let tasks = [], history = [], projects = [], sections = [], view = 'inbox', preview = null, editTask = null, previewSequence = 0, timer, toastTimer;
-let composerOpen = false;
+let composerOpen = false, startPageApplied = false;
 let settings;
 try { settings = JSON.parse(localStorage.getItem('opendoist.settings')) || {}; } catch { settings = {}; }
 settings = { timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Moscow', language: 'auto', ...settings, ...window.OpenDoistAppearance.normalize(settings) };
@@ -61,7 +61,7 @@ function recurringLabel(task) {
   const spans = task.spans?.filter(s => s.kind === 'recurrence' || s.kind === 'mode');
   return spans?.length ? spans.map(s => s.text).join(' ') : 'Повторяется';
 }
-function showLogin() { mobileNavigation.close(false); globalSearch.hide(); notesUI.reset(); loadSequence++; $('#workspace').hidden = true; $('#login-screen').hidden = false; tasks = []; history = []; $('#task-list').replaceChildren(); for (const dialog of document.querySelectorAll('dialog[open]')) dialog.close(); }
+function showLogin() { startPageApplied=false; mobileNavigation.close(false); globalSearch.hide(); notesUI.reset(); loadSequence++; $('#workspace').hidden = true; $('#login-screen').hidden = false; tasks = []; history = []; $('#task-list').replaceChildren(); for (const dialog of document.querySelectorAll('dialog[open]')) dialog.close(); }
 let loadSequence = 0;
 async function load() {
   const sequence = ++loadSequence;
@@ -69,6 +69,7 @@ async function load() {
   // A slower, older refresh must not overwrite a newer snapshot.
   if (sequence !== loadSequence) return;
   ({ settings, tasks, projects, sections } = data);
+  if (!startPageApplied) { view=settings.startPage || 'inbox'; startPageApplied=true; }
   if (data.history) history = data.history;
   window.OpenDoistAppearance.apply(settings);
   try { localStorage.setItem('opendoist.settings', JSON.stringify(settings)); } catch { /* Storage is optional. */ }
@@ -281,6 +282,7 @@ function previewAppearance() {
   document.querySelectorAll('[data-accent]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.accent === draft.accent)));
 }
 $('#settings-open').addEventListener('click', () => {
+  $('#start-page').value = settings.startPage || 'inbox';
   $('#submit-shortcut').value = settings.submitShortcut || 'enter';
   $('#timezone').value = settings.timezone; $('#language').value = settings.language;
   document.querySelectorAll('input[name="theme"]').forEach(input => { input.checked = input.value === settings.theme; });
@@ -296,7 +298,7 @@ $('#settings-dialog').addEventListener('close', () => window.OpenDoistAppearance
 $('#settings-form').addEventListener('submit', async event => {
   event.preventDefault(); const timezone = $('#timezone').value.trim();
   try { new Intl.DateTimeFormat('ru', { timeZone: timezone }); } catch { $('#settings-error').textContent = 'Укажите часовой пояс, например Europe/Moscow'; return; }
-  const next = { ...settings, submitShortcut: $('#submit-shortcut').value, timezone, language: $('#language').value, ...appearanceDraft() };
+  const next = { ...settings, startPage:$('#start-page').value, submitShortcut: $('#submit-shortcut').value, timezone, language: $('#language').value, ...appearanceDraft() };
   const button = event.submitter; button.disabled = true;
   try {
     settings = (await api('/settings', { method: 'PATCH', body: next })).settings;

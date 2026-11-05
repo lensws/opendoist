@@ -28,7 +28,7 @@ function annual(ref, m, d) {
   return null;
 }
 export function parseClock(text) {
-  let s = text.trim().replace(/^(?:at\s+|в\s+|@\s*)/u, '');
+  let s = text.toLowerCase().trim().replace(/^(?:at\s+|в\s+|@\s*)/u, '');
   const parts = { 'утром': 9, 'утро': 9, 'in the morning': 9, 'morning': 9, 'днем': 12, 'днём': 12, 'in the afternoon': 12, 'afternoon': 12, 'noon': 12, 'полдень': 12, 'вечером': 19, 'вечер': 19, 'in the evening': 19, 'evening': 19, 'ночь': 22, 'ночью': 22, 'night': 22 };
   if (s in parts) return { hour: parts[s], minute: 0 };
   const m = /^(\d{1,2})(?::(\d{2}))?\s*(am|pm|утра|дня|вечера|ночи)?$/.exec(s);

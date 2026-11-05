@@ -117,12 +117,13 @@ export class Store {
   }
   settings() {
     const row = this.db.prepare('SELECT data FROM settings WHERE id=1').get();
-    return row ? { darkPalette:'forest', submitShortcut: 'enter', ...JSON.parse(row.data) } : { darkPalette:'forest', submitShortcut: 'enter', theme: 'system', accent: '#c95736', timezone: 'Europe/Moscow', language: 'auto' };
+    return row ? { startPage:'inbox', darkPalette:'forest', submitShortcut: 'enter', ...JSON.parse(row.data) } : { startPage:'inbox', darkPalette:'forest', submitShortcut: 'enter', theme: 'system', accent: '#c95736', timezone: 'Europe/Moscow', language: 'auto' };
   }
   saveSettings(patch) {
-    const allowed = ['theme', 'darkPalette', 'accent', 'timezone', 'language', 'submitShortcut', 'views'];
+    const allowed = ['startPage', 'theme', 'darkPalette', 'accent', 'timezone', 'language', 'submitShortcut', 'views'];
     if (Object.keys(patch).some(key => !allowed.includes(key))) throw new AppError(400, 'Неизвестная настройка');
     const next = { ...this.settings(), ...patch };
+    if (!['inbox','today','upcoming'].includes(next.startPage)) throw new AppError(400,'Неизвестная стартовая страница');
     if (!['forest','graphite','midnight'].includes(next.darkPalette)) throw new AppError(400,'Неизвестная тёмная палитра');
     if (!['light', 'dark', 'system'].includes(next.theme) || !['auto', 'ru', 'en'].includes(next.language) || typeof next.accent !== 'string' || !/^#[0-9a-f]{6}$/i.test(next.accent)) throw new AppError(400, 'Некорректные настройки оформления или языка');
     if (typeof next.timezone !== 'string' || !next.timezone.trim() || next.timezone.length > 100) throw new AppError(400, 'Некорректный часовой пояс');
