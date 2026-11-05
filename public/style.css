@@ -362,3 +362,5 @@ video.attachment-media,audio.attachment-media{width:100%}
 
 .recurrence-pill{color:var(--muted);background:var(--surface-soft);border-color:var(--line)}
 .sidebar-bottom [data-view=notes]{margin:0}
+
+.grouping-switcher button{width:auto;min-width:0;padding:7px 10px;font-size:12px;white-space:nowrap}

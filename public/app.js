@@ -1,3 +1,4 @@
+import { categoryGroups } from './task-grouping.js';
 import { initSettingsNavigation } from './settings-navigation.js';
 import { initMobileNavigation } from './mobile-navigation.js';
 import { initGlobalSearch } from './global-search.js';
@@ -33,7 +34,7 @@ initBackups({api});
 const taskDetails = initTaskDetails({api, getTasks:() => tasks, reload:load, notify});
 const projectUI = initProjects({ api, getData: () => ({ projects, sections, tasks }), reload: load, selectView: selectSearchView, notify });
 const taskInput = initTaskInput({ getProjects: () => projects, chooseProject: id => projectUI.fillPlacement('add', id, '') });
-const projectViews = initProjectViews({ api, reload:load, redraw:render, today:() => today(), getTimezone:() => settings.timezone, makeTaskRow, addTask:addInView, editTask:openEdit, completeTask, notify });
+const projectViews = initProjectViews({ api, reload:load, redraw:render, today:() => today(), getTimezone:() => settings.timezone, getCategories:()=>({projects,sections}), makeTaskRow, addTask:addInView, editTask:openEdit, completeTask, notify });
 initTransfer({ api, reload: load, notify });
 const { openReminders } = initNotifications({ api, reload: load, getSettings: () => settings, notify, onTaskChange:task=>{if(editTask?.id===task.id){editTask=task;drawEditReminders();}} });
 const globalSearch = initGlobalSearch({api,openTask:id=>{const task=tasks.find(t=>t.id===id);if(task)openEdit(task);else notify('Задача больше не доступна');},openNote:id=>notesUI.open(id),selectView:selectSearchView});
@@ -128,6 +129,13 @@ function render() {
   if (manual) selected.sort((a,b) => sections.findIndex(s => s.id === a.sectionId) - sections.findIndex(s => s.id === b.sectionId) || compareTasks(a,b));
   $('#task-summary').textContent = `Задач: ${selected.length}`; $('#empty').hidden = !!selected.length;
   if (layout !== 'list') { $('#empty').hidden = true; projectViews.draw(selected, sections.filter(s => s.projectId === entity?.id)); return; }
+  if (['today','upcoming'].includes(view) && settings.views?.[view]?.grouping==='categories') {
+    for(const group of categoryGroups(selected,projects,sections)) {
+      list.append(node('h2','group-heading',`${group.title} · ${group.tasks.length}`));
+      for(const task of group.tasks) list.append(makeTaskRow(task));
+    }
+    return;
+  }
   let lastGroup;
   const tree = manual ? orderedTree(selected, (a,b) => sections.findIndex(s => s.id === a.sectionId) - sections.findIndex(s => s.id === b.sectionId) || compareTasks(a,b)) : selected.map(task => ({task, depth:0}));
   const treeTasks = tree.map(e => e.task);

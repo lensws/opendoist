@@ -132,7 +132,7 @@ export class Store {
     if (patch.views !== undefined) {
       if (!patch.views || typeof patch.views !== 'object' || Array.isArray(patch.views)) throw new AppError(400, 'Некорректные виды разделов');
       for (const [key, value] of Object.entries(patch.views)) {
-        if (!['inbox', 'today', 'upcoming'].includes(key) || !value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).some(k => !['layout', 'calendar'].includes(k)) || !['list', 'board', 'calendar'].includes(value.layout) || !['month', 'week', 'three-days', 'day'].includes(value.calendar) || (key === 'today' && value.calendar !== 'day')) throw new AppError(400, 'Некорректный вид раздела');
+        if (!['inbox', 'today', 'upcoming'].includes(key) || !value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).some(k => !['layout', 'calendar', 'grouping'].includes(k)) || (value.grouping !== undefined && (!['today','upcoming'].includes(key) || !['categories','chronology'].includes(value.grouping))) || !['list', 'board', 'calendar'].includes(value.layout) || !['month', 'week', 'three-days', 'day'].includes(value.calendar) || (key === 'today' && value.calendar !== 'day')) throw new AppError(400, 'Некорректный вид раздела');
       }
       next.views = { ...this.settings().views, ...patch.views };
     }

@@ -335,12 +335,12 @@ test('built-in layouts persist independently and reject invalid settings atomica
   let app;
   try {
     app = await start(database); await app.login();
-    const views = {inbox:{layout:'board',calendar:'week'}, today:{layout:'calendar',calendar:'day'}, upcoming:{layout:'calendar',calendar:'month'}};
+    const views = {inbox:{layout:'board',calendar:'week'}, today:{layout:'calendar',calendar:'day',grouping:'categories'}, upcoming:{layout:'calendar',calendar:'month',grouping:'chronology'}};
     for (const [key,value] of Object.entries(views)) {
       assert.equal((await app.request('/api/settings', {views:{[key]:value}}, 'PATCH')).response.status, 200);
     }
     assert.deepEqual((await app.request('/api/settings')).data.settings.views, views);
-    for (const bad of [null, [], {all:{layout:'list',calendar:'month'}}, {today:{layout:'calendar',calendar:'week'}}, {inbox:{layout:'bad',calendar:'week'}}, {upcoming:{layout:'board',calendar:'bad'}}, {inbox:{layout:'board',calendar:'week',extra:1}}]) {
+    for (const bad of [null, [], {today:{layout:'list',calendar:'day',grouping:'invalid'}}, {inbox:{layout:'list',calendar:'month',grouping:'categories'}}, {all:{layout:'list',calendar:'month'}}, {today:{layout:'calendar',calendar:'week'}}, {inbox:{layout:'bad',calendar:'week'}}, {upcoming:{layout:'board',calendar:'bad'}}, {inbox:{layout:'board',calendar:'week',extra:1}}]) {
       assert.equal((await app.request('/api/settings', {views:bad}, 'PATCH')).response.status, 400);
       assert.deepEqual((await app.request('/api/settings')).data.settings.views, views);
     }

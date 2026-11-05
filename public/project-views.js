@@ -1,13 +1,14 @@
+import { categoryGroups } from './task-grouping.js';
 import { markdown } from './markdown.js';
 import { calendarRange, nextAnchor, calendarTaskDate, calendarClock } from './calendar-model.js';
 const node = (tag, cls = '', text = '') => { const el = document.createElement(tag); el.className = cls; el.textContent = text; return el; };
 const button = (text, label, action, cls = 'secondary') => { const el = node('button', cls, text); el.type = 'button'; el.setAttribute('aria-label', label); el.addEventListener('click', action); return el; };
 const dateLabel = date => new Date(`${date}T12:00:00Z`).toLocaleDateString('ru', { day:'numeric', month:'long', timeZone:'UTC' });
-export function initProjectViews({ api, reload, redraw, today, getTimezone, makeTaskRow, addTask, editTask, completeTask, notify }) {
+export function initProjectViews({ api, reload, redraw, today, getTimezone, getCategories, makeTaskRow, addTask, editTask, completeTask, notify }) {
   const controls = document.querySelector('#project-view-controls'), layout = document.querySelector('#project-layout'), scale = document.querySelector('#calendar-scale');
   const host = document.querySelector('#project-view');
   const scrollPositions = new Map();
-  let currentView = null, selectedLayout = 'list';
+  let currentView = null, selectedLayout = 'list', grouping = 'chronology';
   let currentProject = null, anchor = null, dragged = null, saving = false;
   function updateCurrentTime() {
     host.querySelectorAll('.current-time-line,.current-time-label').forEach(el => el.remove());
@@ -27,7 +28,7 @@ export function initProjectViews({ api, reload, redraw, today, getTimezone, make
     if ((!currentProject && !currentView) || saving) return;
     const project = currentProject; saving = true; layout.disabled = scale.disabled = true;
     try {
-      const preference = { layout:mode, calendar:currentView === 'today' ? 'day' : scale.value };
+      const preference = { layout:mode, calendar:currentView === 'today' ? 'day' : scale.value, ...(['today','upcoming'].includes(currentView) ? {grouping} : {}) };
       if (project) await api(`/projects/${project.id}/view`, { method:'PATCH', body:{ revision:project.revision, view:preference } });
       else await api('/settings', {method:'PATCH', body:{views:{[currentView]:preference}}});
       await reload();
@@ -38,6 +39,7 @@ export function initProjectViews({ api, reload, redraw, today, getTimezone, make
   layout.querySelectorAll('[data-layout]').forEach(button => button.addEventListener('click', () => {
     if (button.dataset.layout !== selectedLayout) changeView(button.dataset.layout);
   }));
+  document.querySelectorAll('[data-grouping]').forEach(button=>button.addEventListener('click',()=>{if(saving || grouping===button.dataset.grouping)return;grouping=button.dataset.grouping;changeView();}));
   scale.addEventListener('change', () => changeView());
   function configure(project, view, preferences = {}) {
     const builtIn = ['inbox', 'today', 'upcoming'].includes(view) ? view : null;
@@ -48,6 +50,9 @@ export function initProjectViews({ api, reload, redraw, today, getTimezone, make
     const preference = project?.view || preferences[builtIn];
     const mode = preference?.layout || 'list';
     selectedLayout = mode;
+    grouping=preference?.grouping || 'chronology';
+    document.querySelector('#task-grouping').hidden=!['today','upcoming'].includes(builtIn) || mode==='calendar';
+    document.querySelectorAll('[data-grouping]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.grouping===grouping)));
     layout.querySelectorAll('[data-layout]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.layout === mode)));
     scale.value = builtIn === 'today' ? 'day' : preference?.calendar || 'month';
     scale.querySelector('[value="day"]').hidden = !!project;
@@ -77,6 +82,18 @@ export function initProjectViews({ api, reload, redraw, today, getTimezone, make
   }
   function globalBoard(tasks) {
     const board = node('div', 'project-board');
+    if (['today','upcoming'].includes(currentView) && grouping==='categories') {
+      const {projects,sections}=getCategories();
+      for(const group of categoryGroups(tasks,projects,sections)) {
+        const column=node('section','board-column');column.setAttribute('aria-label',group.title);
+        column.append(node('h2','board-heading',`${group.title} · ${group.tasks.length}`));
+        dropZone(column,task=>move(task,{projectId:group.projectId,sectionId:group.sectionId}));
+        for(const task of group.tasks){const row=makeTaskRow(task);row.classList.add('board-card');draggable(row,task);column.append(row);}
+        column.append(button('＋ Добавить задачу',`Добавить задачу: ${group.title}`,()=>addTask({projectId:group.projectId,sectionId:group.sectionId,date:currentView==='today' ? today() : group.tasks[0].due.date}),'add-inline'));
+        board.append(column);
+      }
+      host.append(board);return;
+    }
     const dated = tasks.map(task => ({task, date:calendarTaskDate(task, getTimezone())?.date || null}));
     const dates = [...new Set([today(), ...dated.map(e => e.date).filter(Boolean)])].sort();
     for (const date of [...dates, null]) {
